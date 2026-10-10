@@ -1,6 +1,9 @@
 const express = require('express');
 const { authenticate, authorize } = require('../middleware/auth');
 const { advanceWaitlist, studentHasClash, timesOverlap } = require('../workers/promotionWorker');
+const { Resend } = require('resend');
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const router = express.Router();
 
@@ -504,7 +507,7 @@ router.post('/:id/register', authenticate, (req, res) => {
     // Check if user is already registered in a terminal/active state
     const existingReg = db.prepare('SELECT * FROM registrations WHERE event_id = ? AND user_id = ?').get(eventId, req.user.id);
     if (existingReg) {
-      if (['confirmed', 'promoted', 'pending_payment_approval', 'waitlisted'].includes(existingReg.status)) {
+      if (['confirmed', 'promoted', 'pending_approval', 'waitlisted'].includes(existingReg.status)) {
         db.exec('ROLLBACK');
         return res.status(400).json({ error: `You are already ${existingReg.status} for this event.` });
       }
@@ -575,10 +578,8 @@ router.post('/:id/register', authenticate, (req, res) => {
        });
     }
 
-    // If we have seats and it's paid, it goes to pending_payment_approval
-    if (isPaid) {
-        finalStatus = 'pending_payment_approval';
-    }
+    // All registrations go to pending_approval (requires organizer approval)
+    finalStatus = 'pending_approval';
 
     if (existingReg) {
       db.prepare(`
@@ -655,7 +656,7 @@ router.post('/:id/confirm-promotion', authenticate, (req, res) => {
        }
 
        // Confirm this one
-       const finalStatus = event.is_paid ? 'pending_payment_approval' : 'confirmed';
+       const finalStatus = 'pending_approval';
        db.prepare(`
            UPDATE registrations 
            SET status = ?, promoted_at = NULL, promotion_expires_at = NULL, waitlist_position = NULL, updated_at = CURRENT_TIMESTAMP
@@ -730,7 +731,7 @@ router.delete('/:id/register', authenticate, (req, res) => {
 
        db.prepare("UPDATE registrations SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(reg.id);
        
-       if (['confirmed', 'pending_payment_approval'].includes(reg.status)) {
+       if (['confirmed', 'pending_approval'].includes(reg.status)) {
            db.prepare("UPDATE events SET taken_seats = MAX(0, taken_seats - 1) WHERE id = ?").run(eventId);
            db.exec('COMMIT');
            advanceWaitlist(db, eventId);
@@ -776,7 +777,7 @@ router.get('/:id/registrations', authenticate, (req, res) => {
     WHERE r.event_id = ?
     ORDER BY 
       CASE r.status
-        WHEN 'pending_payment_approval' THEN 1
+        WHEN 'pending_approval' THEN 1
         WHEN 'confirmed' THEN 2
         WHEN 'promoted' THEN 3
         WHEN 'waitlisted' THEN 4
@@ -831,8 +832,8 @@ router.patch('/:id/registrations/:regId/status', authenticate, (req, res) => {
 
       // If approving (changing to confirmed):
       if (status === 'confirmed' && reg.status !== 'confirmed') {
-        if (event.taken_seats >= event.total_seats && reg.status !== 'pending_payment_approval') { // pending payment already holds a seat conceptually if we do it that way, but actually we increased taken_seats on pending!
-          if (reg.status !== 'pending_payment_approval') {
+        if (event.taken_seats >= event.total_seats && reg.status !== 'pending_approval') { // pending payment already holds a seat conceptually if we do it that way, but actually we increased taken_seats on pending!
+          if (reg.status !== 'pending_approval') {
              db.exec('ROLLBACK');
              return res.status(400).json({ error: 'Cannot approve: Event is already at maximum capacity!' });
           }
@@ -851,9 +852,38 @@ router.patch('/:id/registrations/:regId/status', authenticate, (req, res) => {
             db.prepare('UPDATE events SET taken_seats = taken_seats + 1, waitlist_count = MAX(0, waitlist_count - 1) WHERE id = ?').run(eventId);
         }
 
+        // Send confirmation email
+        if (process.env.RESEND_API_KEY) {
+          resend.emails.send({
+            from: 'ClubSync <hello@pabit.in>',
+            to: reg.user_email,
+            subject: `✅ Registration Confirmed: ${event.title}`,
+            html: `
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                <h2 style="color: #2b3a42;">You're in, ${reg.user_name}!</h2>
+                <p style="font-size: 16px; color: #555;">
+                  Your registration for <strong>${event.title}</strong> has been confirmed by the organizer.
+                </p>
+                <p style="font-size: 16px; color: #555;">
+                  You are now officially joined into the event. Check your dashboard for the QR pass and event details.
+                </p>
+                <div style="text-align: center; margin: 30px 0;">
+                  <a href="https://club.pabit.in" style="background-color: #ff5722; color: #fff; text-decoration: none; padding: 14px 24px; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block;">
+                    View Event Details
+                  </a>
+                </div>
+              </div>
+            `
+          }).then((response) => {
+            console.log(`📧 Confirmation email sent to ${reg.user_email}:`, response.data?.id);
+          }).catch((error) => {
+            console.error('Failed to send confirmation email:', error);
+          });
+        }
+
       } else if (status === 'rejected') {
         // If it was previously holding a seat (confirmed or pending)
-        if (['confirmed', 'pending_payment_approval'].includes(reg.status)) {
+        if (['confirmed', 'pending_approval'].includes(reg.status)) {
           db.prepare('UPDATE events SET taken_seats = MAX(0, taken_seats - 1) WHERE id = ?').run(eventId);
         } else if (['waitlisted', 'promoted'].includes(reg.status)) {
           db.prepare('UPDATE events SET waitlist_count = MAX(0, waitlist_count - 1) WHERE id = ?').run(eventId);
@@ -871,7 +901,7 @@ router.patch('/:id/registrations/:regId/status', authenticate, (req, res) => {
       db.exec('COMMIT');
 
       // If rejected and it held a seat, advance waitlist
-      if (status === 'rejected' && ['confirmed', 'pending_payment_approval'].includes(reg.status)) {
+      if (status === 'rejected' && ['confirmed', 'pending_approval'].includes(reg.status)) {
          advanceWaitlist(db, eventId);
       }
 

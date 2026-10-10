@@ -87,7 +87,7 @@ function initDatabase() {
   // ──────────────────────────────────────────────────────
   //  Registrations table — must support the full waitlist
   //  lifecycle: confirmed, waitlisted, promoted, expired,
-  //  pending_payment_approval, rejected, cancelled
+  //  pending_approval, rejected, cancelled
   // ──────────────────────────────────────────────────────
   //  We drop-and-recreate when the schema is outdated so
   //  new status values and columns are available.

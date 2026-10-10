@@ -24,7 +24,9 @@ import {
   FileCheck,
   Eye,
   Info,
-  ArrowLeft
+  ArrowLeft,
+  Trash2,
+  DoorOpen
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import API_BASE_URL from '../lib/api';
@@ -82,7 +84,7 @@ export interface RegistrationItem {
   isPaid: boolean;
   ticket_price: number;
   payment_screenshot: string | null;
-  status: 'pending_payment_approval' | 'confirmed' | 'rejected' | 'waitlisted' | 'promoted' | 'cancelled' | 'expired';
+  status: 'pending_approval' | 'confirmed' | 'rejected' | 'waitlisted' | 'promoted' | 'cancelled' | 'expired';
   rejection_reason: string | null;
   waitlist_position?: number;
   promoted_at?: string;
@@ -1461,6 +1463,29 @@ export default function OrganizerDashboard() {
                         <Send className="w-3.5 h-3.5" /> Submit Now
                       </button>
                     )}
+
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Delete "${ev.title}"? This action cannot be undone and all registrations will be lost.`)) return;
+                        try {
+                          const res = await fetch(`${API_BASE_URL}/events/${ev.id}`, {
+                            method: 'DELETE',
+                            headers: { Authorization: `Bearer ${token}` }
+                          });
+                          if (!res.ok) {
+                            const d = await res.json();
+                            throw new Error(d.error || 'Failed to delete');
+                          }
+                          flashSuccess('Event deleted successfully.');
+                          fetchMyEvents();
+                        } catch (err: any) {
+                          alert(err.message);
+                        }
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-red-50 text-red-700 hover:bg-red-100 rounded-xl text-xs font-bold transition-all border border-red-200"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Delete Event
+                    </button>
                   </div>
                 </div>
               ))}
@@ -1564,14 +1589,30 @@ export default function OrganizerDashboard() {
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                               reg.status === 'confirmed'
                                 ? 'bg-emerald-100 text-emerald-800'
-                                : reg.status === 'pending_payment_approval'
+                                : reg.status === 'pending_approval'
                                 ? 'bg-amber-100 text-amber-800'
+                                : reg.status === 'cancelled'
+                                ? 'bg-orange-100 text-orange-800'
+                                : reg.status === 'promoted'
+                                ? 'bg-blue-100 text-blue-800'
+                                : reg.status === 'waitlisted'
+                                ? 'bg-purple-100 text-purple-800'
+                                : reg.status === 'expired'
+                                ? 'bg-gray-100 text-gray-800'
                                 : 'bg-red-100 text-red-800'
                             }`}>
-                              {reg.status === 'pending_payment_approval'
+                              {reg.status === 'pending_approval'
                                 ? 'Pending Payment Approval'
                                 : reg.status === 'confirmed'
                                 ? 'Officially Joined'
+                                : reg.status === 'cancelled'
+                                ? (reg.isPaid ? 'Left / Refund Needed' : 'Left Event')
+                                : reg.status === 'promoted'
+                                ? 'Promoted (Waiting for User)'
+                                : reg.status === 'waitlisted'
+                                ? `Waitlisted (#${reg.waitlist_position})`
+                                : reg.status === 'expired'
+                                ? 'Promotion Expired'
                                 : 'Rejected'}
                             </span>
                           </div>
@@ -1642,7 +1683,7 @@ export default function OrganizerDashboard() {
 
                         {/* Approval Actions */}
                         <div className="flex items-center gap-2 flex-shrink-0">
-                          {reg.status === 'pending_payment_approval' ? (
+                          {reg.status === 'pending_approval' ? (
                             <>
                               <button
                                 disabled={processingRegId === reg.id}
@@ -1664,6 +1705,34 @@ export default function OrganizerDashboard() {
                           ) : reg.status === 'confirmed' ? (
                             <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
                               Seat Confirmed ✓
+                            </span>
+                          ) : reg.status === 'cancelled' ? (
+                            <span className="text-xs font-bold text-orange-700 bg-orange-50 px-2.5 py-1 rounded-lg border border-orange-200 flex flex-col items-center">
+                              <span>Student Left</span>
+                              {reg.isPaid && <span className="text-[10px] opacity-80">(Requires Refund)</span>}
+                            </span>
+                          ) : reg.status === 'waitlisted' || reg.status === 'promoted' ? (
+                            <>
+                              <button
+                                disabled={processingRegId === reg.id}
+                                onClick={() => handleApproveRegistration(registrationsEvent.id, reg.id)}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50 cursor-pointer"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                Force Accept from Waitlist
+                              </button>
+                              <button
+                                disabled={processingRegId === reg.id}
+                                onClick={() => handleRejectRegistration(registrationsEvent.id, reg.id)}
+                                className="flex items-center gap-1 px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-bold transition-all border border-red-200 active:scale-95 disabled:opacity-50 cursor-pointer"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                Remove
+                              </button>
+                            </>
+                          ) : reg.status === 'expired' ? (
+                            <span className="text-xs font-bold text-gray-600 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200">
+                              Expired
                             </span>
                           ) : (
                             <span className="text-xs font-bold text-red-600 bg-red-50 px-2.5 py-1 rounded-lg border border-red-200">

@@ -7,6 +7,8 @@ export interface User {
   name: string;
   email: string;
   role: Role;
+  year?: string;
+  department?: string;
 }
 
 interface AuthContextType {

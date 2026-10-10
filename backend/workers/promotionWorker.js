@@ -14,6 +14,9 @@
  * ────────────────────────────────────────────────────
  */
 const cron = require('node-cron');
+const { Resend } = require('resend');
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 /**
  * Check whether two time ranges overlap.
@@ -34,7 +37,7 @@ function studentHasClash(db, userId, date, timeStart, timeEnd, excludeEventId = 
     INNER JOIN events e ON r.event_id = e.id
     WHERE r.user_id = ?
       AND e.date = ?
-      AND r.status IN ('confirmed', 'promoted', 'pending_payment_approval')
+      AND r.status IN ('confirmed', 'promoted', 'pending_approval')
   `).all(userId, date);
 
   for (const row of rows) {
@@ -57,10 +60,10 @@ function advanceWaitlist(db, eventId) {
   const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
   if (!event) return;
 
-  // Count active seats (confirmed + promoted + pending_payment_approval)
+  // Count active seats (confirmed + promoted + pending_approval)
   const activeCount = db.prepare(`
     SELECT COUNT(*) as cnt FROM registrations 
-    WHERE event_id = ? AND status IN ('confirmed', 'promoted', 'pending_payment_approval')
+    WHERE event_id = ? AND status IN ('confirmed', 'promoted', 'pending_approval')
   `).get(eventId).cnt;
 
   if (activeCount >= event.total_seats) return; // still full
@@ -93,20 +96,67 @@ function advanceWaitlist(db, eventId) {
     const clash = studentHasClash(db, student.user_id, event.date, event.time_start, event.time_end, eventId);
     if (clash.hasClash) continue; // skip — they now have a clash
 
-    // This student is eligible and clash-free → promote them!
-    const windowSeconds = event.demo_mode ? 60 : 1800; // 60s demo, 30min normal
-    const expiresAt = new Date(Date.now() + windowSeconds * 1000).toISOString();
+    // This student is eligible and clash-free → instantly accept them!
+    const isPaid = Boolean(event.is_paid);
+    const newStatus = isPaid ? 'pending_approval' : 'confirmed';
 
-    db.prepare(`
-      UPDATE registrations SET
-        status = 'promoted',
-        promoted_at = CURRENT_TIMESTAMP,
-        promotion_expires_at = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(expiresAt, student.id);
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.prepare(`
+        UPDATE registrations SET
+          status = ?,
+          promoted_at = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(newStatus, student.id);
 
-    console.log(`🎫 Promoted student ${student.user_name} (ID:${student.user_id}) for event "${event.title}" — window expires at ${expiresAt}`);
+      db.prepare(`
+        UPDATE events SET
+          taken_seats = taken_seats + 1,
+          waitlist_count = MAX(0, waitlist_count - 1)
+        WHERE id = ?
+      `).run(eventId);
+
+      db.exec('COMMIT');
+    } catch(err) {
+      db.exec('ROLLBACK');
+      console.error('Failed to auto-accept waitlisted student:', err);
+      continue;
+    }
+
+    console.log(`🎫 Auto-accepted waitlisted student ${student.user_name} (ID:${student.user_id}) for event "${event.title}"`);
+
+    // Send email notification
+    if (process.env.RESEND_API_KEY) {
+      resend.emails.send({
+        from: 'ClubSync <hello@pabit.in>',
+        to: student.user_email,
+        subject: `🎉 You're in! Seat Secured for ${event.title}`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+            <h2 style="color: #2b3a42;">Great news, ${student.user_name}!</h2>
+            <p style="font-size: 16px; color: #555;">
+              A seat has just opened up for <strong>${event.title}</strong>, and since you were first on the waitlist, you have been automatically accepted!
+            </p>
+            <p style="font-size: 16px; color: #555;">
+              ${isPaid 
+                ? 'Your registration is now pending organizer approval while they verify your payment.' 
+                : 'You are now officially joined into the event.'}
+            </p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="https://club.pabit.in" style="background-color: #ff5722; color: #fff; text-decoration: none; padding: 14px 24px; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block;">
+                View Your Dashboard
+              </a>
+            </div>
+          </div>
+        `
+      }).then((response) => {
+        console.log(`📧 Acceptance email sent to ${student.user_email}:`, response.data?.id);
+      }).catch((error) => {
+        console.error('Failed to send acceptance email:', error);
+      });
+    }
+
     return; // only promote one at a time
   }
 }

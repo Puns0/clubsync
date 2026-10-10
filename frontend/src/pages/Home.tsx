@@ -16,7 +16,8 @@ import {
   AlertCircle,
   Clock4,
   LogIn,
-  ArrowLeft
+  ArrowLeft,
+  DoorOpen
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import { Link } from 'react-router-dom';
@@ -56,12 +57,12 @@ interface Club {
 interface UserRegItem {
   id: string;
   event_id: number;
-  status: 'pending_payment_approval' | 'confirmed' | 'rejected' | 'waitlisted' | 'promoted' | 'cancelled' | 'expired';
+  status: 'pending_approval' | 'confirmed' | 'rejected' | 'waitlisted' | 'promoted' | 'cancelled' | 'expired';
   waitlist_position?: number;
 }
 
 export default function Home() {
-  const { user, token } = useAuth();
+  const { user, token, updateUser } = useAuth();
 
   const [events, setEvents] = useState<EventItem[]>([]);
   const [clubs, setClubs] = useState<Club[]>([]);
@@ -82,6 +83,12 @@ export default function Home() {
 
   // Custom question answers
   const [answers, setAnswers] = useState<Record<string, string>>({});
+
+  // Profile completion states
+  const [missingYear, setMissingYear] = useState('');
+  const [missingDept, setMissingDept] = useState('');
+  const [profileSubmitting, setProfileSubmitting] = useState(false);
+  const [profileError, setProfileError] = useState('');
 
   const screenshotInputRef = useRef<HTMLInputElement>(null);
 
@@ -228,6 +235,56 @@ export default function Home() {
     }
   };
 
+  const handleProfileComplete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileError('');
+    if (!missingYear || !missingDept) {
+      setProfileError('Please select both your year and department.');
+      return;
+    }
+    try {
+      setProfileSubmitting(true);
+      const res = await fetch(`${API_BASE_URL}/auth/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ name: user?.name, year: missingYear, department: missingDept })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update profile');
+      updateUser(data.user);
+    } catch (err: any) {
+      setProfileError(err.message);
+    } finally {
+      setProfileSubmitting(false);
+    }
+  };
+
+  const handleLeaveEvent = async () => {
+    if (!selectedEvent || !token) return;
+    if (!confirm('Are you sure you want to leave this event? If it is a paid event, contact the organizer for a refund.')) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/events/${selectedEvent.id}/register`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to leave event');
+      setRegSuccess('You have left this event.');
+      setUserRegMap(prev => {
+        const updated = { ...prev };
+        delete updated[selectedEvent.id];
+        return updated;
+      });
+      // Refresh events to update seat count
+      fetchEventsAndClubs();
+    } catch (err: any) {
+      setRegError(err.message);
+    }
+  };
+
   // Filter events by selected club and search input
   const filteredEvents = events.filter((ev) => {
     const matchesClub = selectedClubId === null || ev.clubId === selectedClubId || ev.club === clubs.find(c => c.id === selectedClubId)?.name;
@@ -238,8 +295,17 @@ export default function Home() {
     return matchesClub && matchesSearch;
   });
 
-  const liveEvents = filteredEvents.filter((e) => e.isLive);
-  const upcomingEvents = filteredEvents.filter((e) => !e.isLive);
+  const now = new Date();
+  const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  const liveEvents = filteredEvents.filter((e) => {
+    const eventDate = new Date(`${e.date}T${e.timeStart || e.time.split(' ')[0]}`); // Fallback if timeStart missing
+    return eventDate <= oneWeekFromNow;
+  });
+  const upcomingEvents = filteredEvents.filter((e) => {
+    const eventDate = new Date(`${e.date}T${e.timeStart || e.time.split(' ')[0]}`);
+    return eventDate > oneWeekFromNow;
+  });
 
   const container = {
     hidden: { opacity: 0 },
@@ -353,6 +419,7 @@ export default function Home() {
               <motion.div key={event.id} variants={item}>
                 <EventCard
                   {...event}
+                  userStatus={userRegMap[event.id]}
                   onClick={() => {
                     setSelectedEvent(event);
                     setScreenshotData(null);
@@ -403,6 +470,7 @@ export default function Home() {
               <motion.div key={event.id} variants={item}>
                 <EventCard
                   {...event}
+                  userStatus={userRegMap[event.id]}
                   onClick={() => {
                     setSelectedEvent(event);
                     setScreenshotData(null);
@@ -551,7 +619,7 @@ export default function Home() {
               )}
 
               {/* Paid Entry Payment Info & QR */}
-              {selectedEvent.isPaid && (
+              {selectedEvent.isPaid && !userRegMap[selectedEvent.id] && (
                 <div className="p-5 bg-indigo-50/60 rounded-2xl border border-indigo-100 space-y-4">
                   <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
                     {selectedEvent.paymentQr ? (
@@ -651,7 +719,11 @@ export default function Home() {
 
               {/* Registration Action Section */}
               <div className="pt-2 space-y-2">
-                {!user ? (
+                {user?.role === 'admin' ? (
+                  <div className="w-full py-4 text-center text-sm font-bold text-brand-ink/50 bg-brand-offwhite rounded-2xl border border-brand-ink/10">
+                    Admin accounts cannot register for events
+                  </div>
+                ) : !user ? (
                   <Link
                     to="/login"
                     className="w-full py-4 bg-brand-ink text-brand-offwhite hover:bg-brand-ink/90 font-bold text-base rounded-2xl shadow-lg transition-all flex items-center justify-center gap-2"
@@ -659,19 +731,43 @@ export default function Home() {
                     <LogIn className="w-5 h-5 text-brand-vermilion" /> Log in to Book Ticket
                   </Link>
                 ) : userRegMap[selectedEvent.id] === 'confirmed' ? (
-                  <div className="w-full p-4 bg-emerald-100 border border-emerald-300 rounded-2xl flex items-center justify-center gap-2 text-emerald-900 font-bold text-sm">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    Registered & Confirmed! Your seat has been secured.
+                  <div className="space-y-2">
+                    <div className="w-full p-4 bg-emerald-100 border border-emerald-300 rounded-2xl flex items-center justify-center gap-2 text-emerald-900 font-bold text-sm">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                      Registered & Confirmed! Your seat has been secured.
+                    </div>
+                    <button
+                      onClick={handleLeaveEvent}
+                      className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <DoorOpen className="w-4 h-4" /> Leave Event
+                    </button>
                   </div>
-                ) : userRegMap[selectedEvent.id] === 'pending_payment_approval' ? (
-                  <div className="w-full p-4 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-center gap-2 text-amber-900 font-bold text-sm">
-                    <Clock4 className="w-5 h-5 text-amber-600 animate-pulse" />
-                    Payment Verification Pending Organizer Approval
+                ) : userRegMap[selectedEvent.id] === 'pending_approval' ? (
+                  <div className="space-y-2">
+                    <div className="w-full p-4 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-center gap-2 text-amber-900 font-bold text-sm">
+                      <Clock4 className="w-5 h-5 text-amber-600 animate-pulse" />
+                      {selectedEvent.isPaid ? 'Payment Verification Pending Organizer Approval' : 'Pending Organizer Approval'}
+                    </div>
+                    <button
+                      onClick={handleLeaveEvent}
+                      className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <DoorOpen className="w-4 h-4" /> Cancel Registration
+                    </button>
                   </div>
                 ) : userRegMap[selectedEvent.id] === 'waitlisted' ? (
-                  <div className="w-full p-4 bg-blue-50 border border-blue-300 rounded-2xl flex items-center justify-center gap-2 text-blue-900 font-bold text-sm">
-                    <Clock4 className="w-5 h-5 text-blue-600" />
-                    You are on the Waitlist. We will notify you if a seat opens up.
+                  <div className="space-y-2">
+                    <div className="w-full p-4 bg-blue-50 border border-blue-300 rounded-2xl flex items-center justify-center gap-2 text-blue-900 font-bold text-sm">
+                      <Clock4 className="w-5 h-5 text-blue-600" />
+                      You are on the Waitlist. We will notify you if a seat opens up.
+                    </div>
+                    <button
+                      onClick={handleLeaveEvent}
+                      className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <DoorOpen className="w-4 h-4" /> Leave Waitlist
+                    </button>
                   </div>
                 ) : userRegMap[selectedEvent.id] === 'promoted' ? (
                   <div className="space-y-3">
@@ -756,6 +852,81 @@ export default function Home() {
         )}
 
       </AnimatePresence>
+
+      {/* Force Profile Completion Modal */}
+      {user && (!user.year || !user.department) && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-3xl max-w-md w-full p-8 space-y-6 shadow-2xl border border-brand-ink/10"
+          >
+            <div className="flex justify-center mb-2">
+              <div className="w-12 h-12 bg-amber-100 text-amber-600 flex items-center justify-center rounded-2xl">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+            </div>
+            <div className="text-center">
+              <h3 className="text-2xl font-extrabold text-brand-ink">Profile Update Required</h3>
+              <p className="text-sm text-brand-ink/70 mt-2">
+                We've added new eligibility filters for events. Please update your year and department to continue using ClubSync.
+              </p>
+            </div>
+
+            {profileError && (
+              <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm font-medium border border-red-100 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" /> {profileError}
+              </div>
+            )}
+
+            <form onSubmit={handleProfileComplete} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-brand-ink/80">Year of Study</label>
+                <select
+                  value={missingYear}
+                  onChange={(e) => setMissingYear(e.target.value)}
+                  className="w-full px-4 py-3 bg-brand-offwhite/50 border border-brand-ink/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-vermilion/50"
+                  required
+                >
+                  <option value="">Select Year</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-brand-ink/80">Department (Branch)</label>
+                <select
+                  value={missingDept}
+                  onChange={(e) => setMissingDept(e.target.value)}
+                  className="w-full px-4 py-3 bg-brand-offwhite/50 border border-brand-ink/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-vermilion/50"
+                  required
+                >
+                  <option value="">Select Dept</option>
+                  <option value="CSE">CSE</option>
+                  <option value="ECE">ECE</option>
+                  <option value="EEE">EEE</option>
+                  <option value="ME">ME</option>
+                  <option value="CE">CE</option>
+                  <option value="IT">IT</option>
+                  <option value="AIDS">AIDS</option>
+                  <option value="AIML">AIML</option>
+                </select>
+              </div>
+
+              <button
+                type="submit"
+                disabled={profileSubmitting}
+                className="w-full py-4 bg-brand-ink text-white font-bold rounded-2xl shadow-lg hover:bg-brand-ink/90 transition-all disabled:opacity-50"
+              >
+                {profileSubmitting ? 'Updating Profile...' : 'Save Profile & Continue'}
+              </button>
+            </form>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

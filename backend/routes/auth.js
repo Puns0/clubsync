@@ -112,18 +112,18 @@ router.get('/me', authenticate, (req, res) => {
 
 /**
  * PUT /api/auth/profile
- * Update current user's profile (name)
+ * Update current user's profile (name, year, department)
  */
 router.put('/profile', authenticate, (req, res) => {
   const db = req.app.get('db');
-  const { name } = req.body;
+  const { name, year, department } = req.body;
 
   if (!name) {
     return res.status(400).json({ error: 'Name is required' });
   }
 
-  db.prepare('UPDATE users SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-    .run(name, req.user.id);
+  db.prepare('UPDATE users SET name = ?, year = ?, department = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(name, year || null, department || null, req.user.id);
 
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
   res.json({ message: 'Profile updated', user: sanitizeUser(user) });

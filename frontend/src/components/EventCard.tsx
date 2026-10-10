@@ -19,6 +19,7 @@ export interface EventCardProps {
   imageUrl?: string | null;
   pdfUrl?: string | null;
   pdfName?: string | null;
+  userStatus?: string | null;
   onClick?: () => void;
 }
 
@@ -35,6 +36,7 @@ export default function EventCard({
   isPaid = false,
   ticketPrice = 0,
   imageUrl,
+  userStatus,
   onClick
 }: EventCardProps) {
   const isFull = takenSeats >= totalSeats;
@@ -47,8 +49,23 @@ export default function EventCard({
       className="bg-white rounded-2xl p-5 border border-brand-ink/10 shadow-sm hover:shadow-md transition-all flex flex-col h-full relative overflow-hidden group cursor-pointer"
     >
       {/* Ticket perforation effect */}
-      <div className="absolute -left-3 top-1/2 w-6 h-6 bg-brand-offwhite rounded-full border-r border-brand-ink/10 pointer-events-none"></div>
-      <div className="absolute -right-3 top-1/2 w-6 h-6 bg-brand-offwhite rounded-full border-l border-brand-ink/10 pointer-events-none"></div>
+      <div className="absolute -left-3 top-1/2 w-6 h-6 bg-brand-offwhite rounded-full border-r border-brand-ink/10 pointer-events-none z-10"></div>
+      <div className="absolute -right-3 top-1/2 w-6 h-6 bg-brand-offwhite rounded-full border-l border-brand-ink/10 pointer-events-none z-10"></div>
+      
+      {/* User Status Badge Overlay */}
+      {userStatus && userStatus !== 'cancelled' && userStatus !== 'rejected' && userStatus !== 'expired' && (
+        <div className="absolute top-3 right-3 z-20">
+          <span className={`shadow-sm px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider backdrop-blur-md ${
+            userStatus === 'confirmed'
+              ? 'bg-emerald-500 text-white'
+              : userStatus === 'pending_approval'
+              ? 'bg-amber-500 text-white'
+              : 'bg-purple-500 text-white'
+          }`}>
+            {userStatus === 'confirmed' ? 'Joined ✓' : userStatus === 'pending_approval' ? 'Pending' : 'Waitlisted'}
+          </span>
+        </div>
+      )}
       
       {imageUrl && (
         <div className="-mx-5 -mt-5 mb-4 h-32 overflow-hidden bg-brand-ink/5">

@@ -127,16 +127,15 @@ export default function Register() {
                   required
                 >
                   <option value="">Select Year</option>
-                  <option value="1">1st Year</option>
-                  <option value="2">2nd Year</option>
-                  <option value="3">3rd Year</option>
-                  <option value="4">4th Year</option>
-                  <option value="5">5th Year / PG</option>
+                  <option value="1st Year">1st Year</option>
+                  <option value="2nd Year">2nd Year</option>
+                  <option value="3rd Year">3rd Year</option>
+                  <option value="4th Year">4th Year</option>
                 </select>
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-brand-ink/80 pl-1">Department</label>
+                <label className="text-sm font-semibold text-brand-ink/80 pl-1">Department (Branch)</label>
                 <select
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
@@ -147,10 +146,11 @@ export default function Register() {
                   <option value="CSE">CSE</option>
                   <option value="ECE">ECE</option>
                   <option value="EEE">EEE</option>
-                  <option value="ME">Mechanical</option>
-                  <option value="CE">Civil</option>
+                  <option value="ME">ME</option>
+                  <option value="CE">CE</option>
                   <option value="IT">IT</option>
-                  <option value="Other">Other</option>
+                  <option value="AIDS">AIDS</option>
+                  <option value="AIML">AIML</option>
                 </select>
               </div>
             </div>
