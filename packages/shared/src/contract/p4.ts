@@ -46,6 +46,12 @@ export const p4Endpoints = {
     raw: 'pdf' as const,
     response: z.string(),
   },
+  'events.scan': {
+    id: 'events.scan', method: 'POST', path: '/api/events/:eventId/scan', access: 'organizerOrAdmin', part: 4,
+    params: z.object({ eventId: z.string().uuid() }),
+    body: z.object({ token: z.string() }),
+    response: z.object({ success: z.boolean(), message: z.string() }),
+  },
   'analytics.club': {
     id: 'analytics.club', method: 'GET', path: '/api/analytics/clubs/:clubId', access: 'organizer', part: 4,
     params: z.object({ clubId: z.string().uuid() }),

@@ -6,6 +6,7 @@ import { assertEligibility } from '../../lib/eligibility.js';
 import { hasClash, checkOverlap } from '../../lib/overlap.js';
 import { isPromotable } from './promotionPolicy.js';
 import { issueQrPass } from '../../integrations/qr.js';
+import crypto from 'node:crypto';
 
 export class RegistrationsService {
   constructor(private ctx: ModuleContext) {}
@@ -96,15 +97,16 @@ export class RegistrationsService {
         }
       });
 
+      let rawQrToken: string | null = null;
       if (finalStatus === 'CONFIRMED') {
-        // Need to update QR token hash properly with correct ID
-        const qrHash = await issueQrPass(newReg.id);
+        rawQrToken = await issueQrPass(newReg.id);
+        const qrHash = crypto.createHash('sha256').update(rawQrToken).digest('hex');
         await tx.registration.update({ where: { id: newReg.id }, data: { qrTokenHash: qrHash } });
       }
 
       // After commit, we need to emit socket events
       // So we return the created reg to do it outside transaction or via hooks
-      return { status: finalStatus, registration: newReg };
+      return { status: finalStatus, registration: newReg, qrToken: rawQrToken };
     }, { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted, maxWait: 5000, timeout: 10000 });
   async promoteNext(eventId: string, tx: Prisma.TransactionClient) {
     const event = await tx.event.findUnique({ where: { id: eventId } });
