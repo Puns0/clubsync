@@ -19,6 +19,8 @@ function initDatabase() {
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'user' CHECK(role IN ('admin', 'organizer', 'user')),
+      year TEXT,
+      department TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
@@ -73,12 +75,31 @@ function initDatabase() {
       status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'pending_approval', 'approved', 'rejected')),
       rejection_reason TEXT,
       is_live BOOLEAN DEFAULT 0,
+      eligible_years TEXT,
+      eligible_departments TEXT,
+      custom_questions TEXT,
+      demo_mode INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
 
-  // Create registrations table for student registrations and paid approvals
+  // ──────────────────────────────────────────────────────
+  //  Registrations table — must support the full waitlist
+  //  lifecycle: confirmed, waitlisted, promoted, expired,
+  //  pending_payment_approval, rejected, cancelled
+  // ──────────────────────────────────────────────────────
+  //  We drop-and-recreate when the schema is outdated so
+  //  new status values and columns are available.
+  // ──────────────────────────────────────────────────────
+  const regCols = db.pragma('table_info(registrations)').map(c => c.name);
+  const needsMigration = !regCols.includes('waitlist_position') || !regCols.includes('answers');
+
+  if (regCols.length > 0 && needsMigration) {
+    // Table exists but lacks new columns — recreate
+    db.exec('DROP TABLE IF EXISTS registrations');
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS registrations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -89,14 +110,40 @@ function initDatabase() {
       is_paid BOOLEAN DEFAULT 0,
       ticket_price REAL DEFAULT 0,
       payment_screenshot TEXT,
-      status TEXT NOT NULL DEFAULT 'confirmed' CHECK(status IN ('pending_payment_approval', 'confirmed', 'rejected')),
+      status TEXT NOT NULL DEFAULT 'confirmed',
       rejection_reason TEXT,
+      waitlist_position INTEGER,
+      promoted_at DATETIME,
+      promotion_expires_at DATETIME,
+      preferred_event INTEGER DEFAULT 0,
+      answers TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(event_id, user_id)
     )
   `);
 
+  // ──────────────────────────────────────────────────────
+  //  Safe migrations for columns added after initial
+  //  CREATE TABLE (idempotent — ignores if already there)
+  // ──────────────────────────────────────────────────────
+  const safeAlter = (sql) => {
+    try { db.exec(sql); } catch (_) { /* column already exists */ }
+  };
+
+  // Users table additions
+  safeAlter('ALTER TABLE users ADD COLUMN year TEXT');
+  safeAlter('ALTER TABLE users ADD COLUMN department TEXT');
+
+  // Events table additions
+  safeAlter('ALTER TABLE events ADD COLUMN eligible_years TEXT');
+  safeAlter('ALTER TABLE events ADD COLUMN eligible_departments TEXT');
+  safeAlter('ALTER TABLE events ADD COLUMN custom_questions TEXT');
+  safeAlter('ALTER TABLE events ADD COLUMN demo_mode INTEGER DEFAULT 0');
+
+  // ──────────────────────────────────────────────────────
+  //  Seed data
+  // ──────────────────────────────────────────────────────
 
   // Seed default admin account
   const adminExists = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@clubsync.com');
@@ -149,4 +196,3 @@ function initDatabase() {
 }
 
 module.exports = { initDatabase, DB_PATH };
-

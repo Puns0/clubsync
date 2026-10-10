@@ -1,15 +1,15 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import EventCard from '../components/EventCard';
-import { 
-  Search, 
-  MapPin, 
-  Clock, 
-  Users, 
-  Ticket, 
-  FileText, 
-  X, 
-  CheckCircle2, 
+import {
+  Search,
+  MapPin,
+  Clock,
+  Users,
+  Ticket,
+  FileText,
+  X,
+  CheckCircle2,
   CalendarDays,
   Sparkles,
   Upload,
@@ -41,6 +41,9 @@ interface EventItem {
   imageUrl?: string | null;
   pdfUrl?: string | null;
   pdfName?: string | null;
+  customQuestions?: string[];
+  eligibleYears?: string[];
+  eligibleDepartments?: string[];
 }
 
 interface Club {
@@ -53,7 +56,8 @@ interface Club {
 interface UserRegItem {
   id: string;
   event_id: number;
-  status: 'pending_payment_approval' | 'confirmed' | 'rejected';
+  status: 'pending_payment_approval' | 'confirmed' | 'rejected' | 'waitlisted' | 'promoted' | 'cancelled' | 'expired';
+  waitlist_position?: number;
 }
 
 export default function Home() {
@@ -75,6 +79,9 @@ export default function Home() {
   const [regError, setRegError] = useState('');
   const [regSuccess, setRegSuccess] = useState('');
   const [isSubmittingReg, setIsSubmittingReg] = useState(false);
+
+  // Custom question answers
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
   const screenshotInputRef = useRef<HTMLInputElement>(null);
 
@@ -111,7 +118,9 @@ export default function Home() {
         const d = await res.json();
         const map: { [eventId: string]: string } = {};
         (d.registrations || []).forEach((r: UserRegItem) => {
-          map[r.event_id.toString()] = r.status;
+          if (!['cancelled', 'expired', 'rejected'].includes(r.status)) {
+            map[r.event_id.toString()] = r.status;
+          }
         });
         setUserRegMap(map);
       }
@@ -169,6 +178,16 @@ export default function Home() {
       return;
     }
 
+    // Validate custom questions are answered
+    if (selectedEvent.customQuestions && selectedEvent.customQuestions.length > 0) {
+      for (const q of selectedEvent.customQuestions) {
+        if (!answers[q] || !answers[q].trim()) {
+          setRegError(`Please answer: "${q}"`);
+          return;
+        }
+      }
+    }
+
     try {
       setIsSubmittingReg(true);
       const res = await fetch(`${API_BASE_URL}/events/${selectedEvent.id}/register`, {
@@ -178,7 +197,8 @@ export default function Home() {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          paymentScreenshot: selectedEvent.isPaid ? screenshotData : null
+          paymentScreenshot: selectedEvent.isPaid ? screenshotData : null,
+          answers: Object.keys(answers).length > 0 ? answers : undefined
         })
       });
 
@@ -292,11 +312,10 @@ export default function Home() {
         <div className="flex overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 gap-2 no-scrollbar scroll-smooth">
           <button
             onClick={() => setSelectedClubId(null)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
-              selectedClubId === null
+            className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${selectedClubId === null
                 ? 'bg-brand-ink text-white border-brand-ink shadow-sm'
                 : 'bg-white text-brand-ink/70 border-brand-ink/10 hover:border-brand-ink/30'
-            }`}
+              }`}
           >
             All Clubs ({events.length})
           </button>
@@ -304,11 +323,10 @@ export default function Home() {
             <button
               key={club.id}
               onClick={() => setSelectedClubId(club.id === selectedClubId ? null : club.id)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${
-                selectedClubId === club.id
+              className={`px-4 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all border ${selectedClubId === club.id
                   ? 'bg-brand-vermilion text-white border-brand-vermilion shadow-sm'
                   : 'bg-white text-brand-ink/70 border-brand-ink/10 hover:border-brand-ink/30'
-              }`}
+                }`}
             >
               {club.name}
             </button>
@@ -402,7 +420,7 @@ export default function Home() {
       {/* Event Details & Registration Modal */}
       <AnimatePresence>
         {selectedEvent && (
-          <div 
+          <div
             onClick={(e) => { if (e.target === e.currentTarget) setSelectedEvent(null); }}
             className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
           >
@@ -497,6 +515,41 @@ export default function Home() {
                 </div>
               )}
 
+              {/* Eligibility Notice */}
+              {(selectedEvent.eligibleYears?.length || selectedEvent.eligibleDepartments?.length) ? (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl space-y-1">
+                  <h4 className="text-[11px] font-bold uppercase tracking-wider text-blue-800 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5" /> Eligibility Restrictions
+                  </h4>
+                  <p className="text-xs text-blue-700 font-medium">
+                    This event is restricted. 
+                    {selectedEvent.eligibleYears?.length ? ` Years: ${selectedEvent.eligibleYears.join(', ')}.` : ''}
+                    {selectedEvent.eligibleDepartments?.length ? ` Depts: ${selectedEvent.eligibleDepartments.join(', ')}.` : ''}
+                  </p>
+                </div>
+              ) : null}
+
+              {/* Custom Questions */}
+              {selectedEvent.customQuestions && selectedEvent.customQuestions.length > 0 && !userRegMap[selectedEvent.id] && (
+                <div className="p-4 bg-brand-offwhite rounded-2xl border border-brand-ink/10 space-y-3">
+                  <h4 className="text-sm font-bold text-brand-ink">Required Details</h4>
+                  {selectedEvent.customQuestions.map((q, idx) => (
+                    <div key={idx} className="space-y-1.5">
+                      <label className="block text-xs font-bold text-brand-ink/70">
+                        {q} <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={answers[q] || ''}
+                        onChange={(e) => setAnswers(prev => ({ ...prev, [q]: e.target.value }))}
+                        placeholder="Your answer..."
+                        className="w-full p-2.5 bg-white border border-brand-ink/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-vermilion/50"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Paid Entry Payment Info & QR */}
               {selectedEvent.isPaid && (
                 <div className="p-5 bg-indigo-50/60 rounded-2xl border border-indigo-100 space-y-4">
@@ -539,11 +592,10 @@ export default function Home() {
 
                     <div
                       onClick={() => screenshotInputRef.current?.click()}
-                      className={`p-4 border-2 border-dashed rounded-2xl cursor-pointer text-center space-y-1.5 transition-all bg-white ${
-                        screenshotData
+                      className={`p-4 border-2 border-dashed rounded-2xl cursor-pointer text-center space-y-1.5 transition-all bg-white ${screenshotData
                           ? 'border-emerald-500 bg-emerald-50/20'
                           : 'border-indigo-200 hover:border-indigo-400'
-                      }`}
+                        }`}
                     >
                       {screenshotData ? (
                         <div className="flex items-center justify-center gap-3">
@@ -616,6 +668,66 @@ export default function Home() {
                     <Clock4 className="w-5 h-5 text-amber-600 animate-pulse" />
                     Payment Verification Pending Organizer Approval
                   </div>
+                ) : userRegMap[selectedEvent.id] === 'waitlisted' ? (
+                  <div className="w-full p-4 bg-blue-50 border border-blue-300 rounded-2xl flex items-center justify-center gap-2 text-blue-900 font-bold text-sm">
+                    <Clock4 className="w-5 h-5 text-blue-600" />
+                    You are on the Waitlist. We will notify you if a seat opens up.
+                  </div>
+                ) : userRegMap[selectedEvent.id] === 'promoted' ? (
+                  <div className="space-y-3">
+                    <div className="w-full p-4 bg-brand-vermilion/10 border border-brand-vermilion/30 rounded-2xl text-center space-y-1">
+                      <h4 className="text-brand-vermilion font-bold text-sm flex items-center justify-center gap-2">
+                        <Sparkles className="w-4 h-4" /> Seat Available!
+                      </h4>
+                      <p className="text-xs text-brand-ink/70">
+                        You have been promoted from the waitlist. Confirm now to secure your spot.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`${API_BASE_URL}/events/${selectedEvent.id}/confirm-promotion`, {
+                              method: 'POST',
+                              headers: { Authorization: `Bearer ${token}` }
+                            });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error);
+                            setRegSuccess(data.message);
+                            setUserRegMap(prev => ({ ...prev, [selectedEvent.id]: data.status }));
+                          } catch(err: any) {
+                            setRegError(err.message);
+                          }
+                        }}
+                        className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl transition-all"
+                      >
+                        Confirm Seat
+                      </button>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`${API_BASE_URL}/events/${selectedEvent.id}/pass-promotion`, {
+                              method: 'POST',
+                              headers: { Authorization: `Bearer ${token}` }
+                            });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error);
+                            setRegSuccess(data.message);
+                            setUserRegMap(prev => {
+                              const updated = { ...prev };
+                              delete updated[selectedEvent.id];
+                              return updated;
+                            });
+                          } catch(err: any) {
+                            setRegError(err.message);
+                          }
+                        }}
+                        className="flex-1 py-3 bg-brand-offwhite hover:bg-brand-ink/10 text-brand-ink font-bold text-sm rounded-xl transition-all border border-brand-ink/10"
+                      >
+                        Pass
+                      </button>
+                    </div>
+                  </div>
                 ) : (
                   <button
                     disabled={isSubmittingReg}
@@ -623,10 +735,10 @@ export default function Home() {
                     className="w-full py-4 bg-brand-vermilion hover:bg-brand-vermilion/90 active:scale-98 text-white font-bold text-base rounded-2xl shadow-lg transition-all disabled:opacity-50"
                   >
                     {isSubmittingReg
-                      ? 'Submitting Proof...'
+                      ? 'Submitting Request...'
                       : selectedEvent.isPaid
-                      ? `Submit Payment Screenshot & Join (₹${selectedEvent.ticketPrice})`
-                      : 'Register for Free Seat'}
+                        ? `Submit Payment Screenshot & Request (₹${selectedEvent.ticketPrice})`
+                        : 'Register Now'}
                   </button>
                 )}
 

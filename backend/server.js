@@ -33,6 +33,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal Server Error' });
 });
 
+// Start promotion worker
+const { startPromotionWorker } = require('./workers/promotionWorker');
+startPromotionWorker(db);
+
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Backend server running on http://localhost:${PORT}`);

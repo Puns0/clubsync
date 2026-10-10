@@ -30,7 +30,7 @@ function sanitizeUser(user) {
  */
 router.post('/register', (req, res) => {
   const db = req.app.get('db');
-  const { name, email, password } = req.body;
+  const { name, email, password, year, department } = req.body;
 
   // Validation
   if (!name || !email || !password) {
@@ -53,8 +53,8 @@ router.post('/register', (req, res) => {
   // Hash password and insert
   const hashedPassword = bcrypt.hashSync(password, 12);
   const result = db.prepare(
-    'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)'
-  ).run(name, email, hashedPassword, 'user');
+    'INSERT INTO users (name, email, password, role, year, department) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(name, email, hashedPassword, 'user', year || null, department || null);
 
   const newUser = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
   const token = generateToken(newUser);

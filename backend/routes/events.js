@@ -1,5 +1,6 @@
 const express = require('express');
 const { authenticate, authorize } = require('../middleware/auth');
+const { advanceWaitlist, studentHasClash, timesOverlap } = require('../workers/promotionWorker');
 
 const router = express.Router();
 
@@ -73,6 +74,10 @@ function formatEvent(e) {
     status: e.status,
     rejectionReason: e.rejection_reason || null,
     isLive: Boolean(e.is_live),
+    eligibleYears: e.eligible_years ? JSON.parse(e.eligible_years) : null,
+    eligibleDepartments: e.eligible_departments ? JSON.parse(e.eligible_departments) : null,
+    customQuestions: e.custom_questions ? JSON.parse(e.custom_questions) : [],
+    demoMode: Boolean(e.demo_mode),
     createdAt: e.created_at,
     updatedAt: e.updated_at
   };
@@ -155,7 +160,11 @@ router.post('/', authenticate, (req, res) => {
     imageUrl = '',
     pdfUrl = '',
     pdfName = '',
-    status = 'draft' // 'draft' or 'pending_approval'
+    status = 'draft', // 'draft' or 'pending_approval'
+    eligibleYears = null,
+    eligibleDepartments = null,
+    customQuestions = [],
+    demoMode = false
   } = req.body;
 
   // Basic validation
@@ -201,8 +210,9 @@ router.post('/', authenticate, (req, res) => {
       date, time_start, time_end, venue, description,
       total_seats, taken_seats, waitlist_count,
       is_paid, ticket_price, payment_qr,
-      image_url, pdf_url, pdf_name, status, is_live
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, 0)
+      image_url, pdf_url, pdf_name, status, is_live,
+      eligible_years, eligible_departments, custom_questions, demo_mode
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
   `);
 
   const result = insertStmt.run(
@@ -223,7 +233,11 @@ router.post('/', authenticate, (req, res) => {
     imageUrl,
     pdfUrl,
     pdfName,
-    eventStatus
+    eventStatus,
+    eligibleYears ? JSON.stringify(eligibleYears) : null,
+    eligibleDepartments ? JSON.stringify(eligibleDepartments) : null,
+    JSON.stringify(customQuestions || []),
+    demoMode ? 1 : 0
   );
 
   const newEvent = db.prepare('SELECT * FROM events WHERE id = ?').get(result.lastInsertRowid);
@@ -266,7 +280,11 @@ router.put('/:id', authenticate, (req, res) => {
     imageUrl = existing.image_url,
     pdfUrl = existing.pdf_url,
     pdfName = existing.pdf_name,
-    status = existing.status
+    status = existing.status,
+    eligibleYears = existing.eligible_years ? JSON.parse(existing.eligible_years) : null,
+    eligibleDepartments = existing.eligible_departments ? JSON.parse(existing.eligible_departments) : null,
+    customQuestions = existing.custom_questions ? JSON.parse(existing.custom_questions) : [],
+    demoMode = Boolean(existing.demo_mode)
   } = req.body;
 
   if (timeStart >= timeEnd) {
@@ -292,7 +310,7 @@ router.put('/:id', authenticate, (req, res) => {
       description = ?, total_seats = ?,
       is_paid = ?, ticket_price = ?, payment_qr = ?,
       image_url = ?, pdf_url = ?, pdf_name = ?,
-      status = ?, updated_at = CURRENT_TIMESTAMP
+      status = ?, eligible_years = ?, eligible_departments = ?, custom_questions = ?, demo_mode = ?, updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
   `).run(
     title, clubId, clubName,
@@ -300,7 +318,12 @@ router.put('/:id', authenticate, (req, res) => {
     description, parseInt(totalSeats, 10) || 50,
     isPaid ? 1 : 0, isPaid ? parseFloat(ticketPrice) || 0 : 0, paymentQr,
     imageUrl, pdfUrl, pdfName,
-    status, eventId
+    status,
+    eligibleYears ? JSON.stringify(eligibleYears) : null,
+    eligibleDepartments ? JSON.stringify(eligibleDepartments) : null,
+    JSON.stringify(customQuestions || []),
+    demoMode ? 1 : 0,
+    eventId
   );
 
   const updated = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
@@ -390,7 +413,8 @@ router.post('/demo', authenticate, authorize('admin'), (req, res) => {
     is_paid: 0,
     ticket_price: 0,
     status: 'approved',
-    is_live: 1
+    is_live: 1,
+    demo_mode: 1 // fast promotion for demo
   };
 
   const result = db.prepare(`
@@ -398,13 +422,13 @@ router.post('/demo', authenticate, authorize('admin'), (req, res) => {
       title, club_id, club_name, organizer_id, organizer_name,
       date, time_start, time_end, venue, description,
       total_seats, taken_seats, waitlist_count,
-      is_paid, ticket_price, status, is_live
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      is_paid, ticket_price, status, is_live, demo_mode
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     demoEvent.title, demoEvent.club_id, demoEvent.club_name, demoEvent.organizer_id, demoEvent.organizer_name,
     demoEvent.date, demoEvent.time_start, demoEvent.time_end, demoEvent.venue, demoEvent.description,
     demoEvent.total_seats, demoEvent.taken_seats, demoEvent.waitlist_count,
-    demoEvent.is_paid, demoEvent.ticket_price, demoEvent.status, demoEvent.is_live
+    demoEvent.is_paid, demoEvent.ticket_price, demoEvent.status, demoEvent.is_live, demoEvent.demo_mode
   );
 
   const created = db.prepare('SELECT * FROM events WHERE id = ?').get(result.lastInsertRowid);
@@ -442,93 +466,295 @@ router.delete('/:id', authenticate, (req, res) => {
 router.post('/:id/register', authenticate, (req, res) => {
   const db = req.app.get('db');
   const eventId = parseInt(req.params.id, 10);
-  const { paymentScreenshot } = req.body;
+  const { paymentScreenshot, preferredEvent, answers } = req.body; // preferredEvent is boolean
 
-  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
-  if (!event) {
-    return res.status(404).json({ error: 'Event not found' });
-  }
+  // Get user with department and year
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
 
-  // Check if user is already registered
-  const existingReg = db.prepare('SELECT * FROM registrations WHERE event_id = ? AND user_id = ?').get(eventId, req.user.id);
-  if (existingReg) {
-    if (existingReg.status === 'confirmed') {
-      return res.status(400).json({ error: 'You are already registered for this event!' });
+  // START TRANSACTION
+  db.exec('BEGIN IMMEDIATE');
+
+  try {
+    const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
+    if (!event) {
+      db.exec('ROLLBACK');
+      return res.status(404).json({ error: 'Event not found' });
     }
-    if (existingReg.status === 'pending_payment_approval') {
-      return res.status(400).json({ error: 'Your registration is already awaiting payment verification by the organizer.' });
+
+    // Check Eligibility
+    let eligibleYears = null;
+    let eligibleDepts = null;
+    try { eligibleYears = event.eligible_years ? JSON.parse(event.eligible_years) : null; } catch (_) {}
+    try { eligibleDepts = event.eligible_departments ? JSON.parse(event.eligible_departments) : null; } catch (_) {}
+    
+    if (eligibleYears && eligibleYears.length > 0) {
+      if (!user.year || !eligibleYears.includes(user.year)) {
+        db.exec('ROLLBACK');
+        return res.status(403).json({ error: `Not eligible. This event is restricted to years: ${eligibleYears.join(', ')}` });
+      }
     }
-  }
+    
+    if (eligibleDepts && eligibleDepts.length > 0) {
+      if (!user.department || !eligibleDepts.includes(user.department)) {
+         db.exec('ROLLBACK');
+         return res.status(403).json({ error: `Not eligible. This event is restricted to departments: ${eligibleDepts.join(', ')}` });
+      }
+    }
 
-  // Check capacity
-  if (event.taken_seats >= event.total_seats) {
-    return res.status(400).json({ error: 'Sorry, this event is fully booked.' });
-  }
+    // Check if user is already registered in a terminal/active state
+    const existingReg = db.prepare('SELECT * FROM registrations WHERE event_id = ? AND user_id = ?').get(eventId, req.user.id);
+    if (existingReg) {
+      if (['confirmed', 'promoted', 'pending_payment_approval', 'waitlisted'].includes(existingReg.status)) {
+        db.exec('ROLLBACK');
+        return res.status(400).json({ error: `You are already ${existingReg.status} for this event.` });
+      }
+    }
 
-  const isPaid = Boolean(event.is_paid);
+    // Overlap / Clash Detection
+    // Allow if they are just waitlisting for a preferred event
+    const clashCheck = studentHasClash(db, req.user.id, event.date, event.time_start, event.time_end);
+    if (clashCheck.hasClash) {
+      if (!preferredEvent) {
+         db.exec('ROLLBACK');
+         return res.status(409).json({
+           error: 'Time Clash Detected',
+           clashWith: clashCheck.clashWith,
+           suggestions: [
+             { action: 'join_waitlist', label: 'Join waitlist for this event instead (Preferred Event)' },
+             { action: 'swap', label: `Cancel ${clashCheck.clashWith.title} and register here` }
+           ]
+         });
+      }
+    }
 
-  // If paid, payment screenshot is MANDATORY
-  if (isPaid) {
-    if (!paymentScreenshot) {
-      return res.status(400).json({ 
-        error: 'Mandatory Requirement: Please upload your payment transaction screenshot to request verification for this paid event.' 
-      });
+    const isPaid = Boolean(event.is_paid);
+    let finalStatus = 'confirmed';
+
+    if (isPaid && !paymentScreenshot && !preferredEvent) { // if just joining waitlist, don't need screenshot yet (waitlist bypasses payment until promoted, or maybe we want it now. Let's say waitlist needs screenshot if paid, but let's assume they don't have to pay until promoted for simplicity, OR we require it now. Let's require it now if they want to join waitlist for a paid event, to keep it simple). Actually, the prompt says "If seats remain, create a confirmed registration and a QR pass."
+        if(!paymentScreenshot) {
+             db.exec('ROLLBACK');
+             return res.status(400).json({ 
+                error: 'Mandatory Requirement: Please upload your payment transaction screenshot to request registration.' 
+             });
+        }
+    }
+
+    // Capacity Check
+    if (event.taken_seats >= event.total_seats || preferredEvent) {
+       // Waitlist them!
+       finalStatus = 'waitlisted';
+       const maxPos = db.prepare('SELECT MAX(waitlist_position) as m FROM registrations WHERE event_id = ?').get(eventId).m || 0;
+       const nextPos = maxPos + 1;
+
+       if (existingReg) {
+          db.prepare(`
+            UPDATE registrations SET 
+              payment_screenshot = ?, 
+              status = 'waitlisted',
+              waitlist_position = ?,
+              preferred_event = ?,
+              answers = ?,
+              rejection_reason = NULL,
+              updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `).run(paymentScreenshot, nextPos, preferredEvent ? 1 : 0, JSON.stringify(answers || {}), existingReg.id);
+       } else {
+          db.prepare(`
+            INSERT INTO registrations (event_id, user_id, user_name, user_email, is_paid, ticket_price, payment_screenshot, status, waitlist_position, preferred_event, answers)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'waitlisted', ?, ?, ?)
+          `).run(eventId, req.user.id, req.user.name, req.user.email, isPaid ? 1 : 0, event.ticket_price, paymentScreenshot, nextPos, preferredEvent ? 1 : 0, JSON.stringify(answers || {}));
+       }
+
+       db.prepare('UPDATE events SET waitlist_count = waitlist_count + 1 WHERE id = ?').run(eventId);
+
+       db.exec('COMMIT');
+       return res.status(201).json({
+          message: 'Added to Waitlist!',
+          status: 'waitlisted',
+          waitlistPosition: nextPos
+       });
+    }
+
+    // If we have seats and it's paid, it goes to pending_payment_approval
+    if (isPaid) {
+        finalStatus = 'pending_payment_approval';
     }
 
     if (existingReg) {
       db.prepare(`
         UPDATE registrations SET 
           payment_screenshot = ?, 
-          status = 'pending_payment_approval',
+          status = ?,
+          preferred_event = 0,
+          answers = ?,
           rejection_reason = NULL,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(paymentScreenshot, existingReg.id);
+      `).run(paymentScreenshot, finalStatus, JSON.stringify(answers || {}), existingReg.id);
     } else {
       db.prepare(`
-        INSERT INTO registrations (event_id, user_id, user_name, user_email, is_paid, ticket_price, payment_screenshot, status)
-        VALUES (?, ?, ?, ?, 1, ?, ?, 'pending_payment_approval')
-      `).run(eventId, req.user.id, req.user.name, req.user.email, event.ticket_price, paymentScreenshot);
+        INSERT INTO registrations (event_id, user_id, user_name, user_email, is_paid, ticket_price, payment_screenshot, status, answers)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(eventId, req.user.id, req.user.name, req.user.email, isPaid ? 1 : 0, event.ticket_price, paymentScreenshot, finalStatus, JSON.stringify(answers || {}));
     }
 
+    // Increment taken seats
+    db.prepare('UPDATE events SET taken_seats = taken_seats + 1 WHERE id = ?').run(eventId);
+    
+    db.exec('COMMIT');
+
     return res.status(201).json({
-      message: 'Payment screenshot submitted! Your seat will be confirmed once the organizer approves your transaction.',
-      status: 'pending_payment_approval'
+      message: isPaid ? 'Payment screenshot submitted! Waiting for approval.' : 'Registration confirmed! Your seat is secured.',
+      status: finalStatus
     });
+
+  } catch (error) {
+    db.exec('ROLLBACK');
+    console.error('Registration error:', error);
+    return res.status(500).json({ error: 'Internal server error during registration' });
   }
-
-  // Free Event: Auto-confirm & increment seats
-  if (existingReg) {
-    db.prepare(`
-      UPDATE registrations SET 
-        status = 'confirmed',
-        rejection_reason = NULL,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(existingReg.id);
-  } else {
-    db.prepare(`
-      INSERT INTO registrations (event_id, user_id, user_name, user_email, is_paid, ticket_price, status)
-      VALUES (?, ?, ?, ?, 0, 0, 'confirmed')
-    `).run(eventId, req.user.id, req.user.name, req.user.email);
-  }
-
-  // Increment taken seats
-  db.prepare('UPDATE events SET taken_seats = taken_seats + 1 WHERE id = ?').run(eventId);
-
-  const updatedEvent = db.prepare('SELECT taken_seats, total_seats FROM events WHERE id = ?').get(eventId);
-
-  return res.status(201).json({
-    message: 'Registration confirmed! Your seat is secured.',
-    status: 'confirmed',
-    takenSeats: updatedEvent.taken_seats,
-    totalSeats: updatedEvent.total_seats
-  });
 });
 
 /**
+ * POST /api/events/:id/confirm-promotion
+ * Student confirms a promoted seat.
+ * If they have a clash, the conflicting seat is released!
+ */
+router.post('/:id/confirm-promotion', authenticate, (req, res) => {
+   const db = req.app.get('db');
+   const eventId = parseInt(req.params.id, 10);
+
+   db.exec('BEGIN IMMEDIATE');
+   try {
+       const reg = db.prepare("SELECT * FROM registrations WHERE event_id = ? AND user_id = ? AND status = 'promoted'").get(eventId, req.user.id);
+       if (!reg) {
+           db.exec('ROLLBACK');
+           return res.status(404).json({ error: 'No active promotion found for this event.' });
+       }
+
+       // Check if window expired
+       if (new Date(reg.promotion_expires_at) < new Date()) {
+           // Should be handled by worker, but just in case
+           db.prepare("UPDATE registrations SET status = 'expired' WHERE id = ?").run(reg.id);
+           db.exec('COMMIT');
+           advanceWaitlist(db, eventId);
+           return res.status(400).json({ error: 'Promotion window has expired.' });
+       }
+
+       const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
+
+       // Check for clash and release conflicting event if present
+       const clashCheck = studentHasClash(db, req.user.id, event.date, event.time_start, event.time_end, eventId);
+       let swappedFrom = null;
+       if (clashCheck.hasClash) {
+           const clashingReg = clashCheck.clashWith;
+           // Release the clashing seat
+           db.prepare("UPDATE registrations SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(clashingReg.id);
+           db.prepare("UPDATE events SET taken_seats = MAX(0, taken_seats - 1) WHERE id = ?").run(clashingReg.event_id);
+           swappedFrom = clashingReg.title;
+       }
+
+       // Confirm this one
+       const finalStatus = event.is_paid ? 'pending_payment_approval' : 'confirmed';
+       db.prepare(`
+           UPDATE registrations 
+           SET status = ?, promoted_at = NULL, promotion_expires_at = NULL, waitlist_position = NULL, updated_at = CURRENT_TIMESTAMP
+           WHERE id = ?
+       `).run(finalStatus, reg.id);
+       
+       db.prepare("UPDATE events SET waitlist_count = MAX(0, waitlist_count - 1), taken_seats = taken_seats + 1 WHERE id = ?").run(eventId);
+
+       db.exec('COMMIT');
+
+       // Advance waitlist for the event we just released (if any) outside the main transaction
+       if (swappedFrom && clashCheck.clashWith) {
+           advanceWaitlist(db, clashCheck.clashWith.event_id);
+       }
+
+       res.json({ message: `Successfully confirmed seat for ${event.title}!${swappedFrom ? ` Automatically released your seat for ${swappedFrom}.` : ''}`, status: finalStatus });
+
+   } catch(error) {
+       db.exec('ROLLBACK');
+       console.error(error);
+       res.status(500).json({ error: 'Failed to confirm promotion.' });
+   }
+});
+
+/**
+ * POST /api/events/:id/pass-promotion
+ * Student declines a promoted seat.
+ */
+router.post('/:id/pass-promotion', authenticate, (req, res) => {
+   const db = req.app.get('db');
+   const eventId = parseInt(req.params.id, 10);
+
+   db.exec('BEGIN IMMEDIATE');
+   try {
+       const reg = db.prepare("SELECT * FROM registrations WHERE event_id = ? AND user_id = ? AND status = 'promoted'").get(eventId, req.user.id);
+       if (!reg) {
+           db.exec('ROLLBACK');
+           return res.status(404).json({ error: 'No active promotion found for this event.' });
+       }
+
+       db.prepare("UPDATE registrations SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(reg.id);
+       db.prepare("UPDATE events SET waitlist_count = MAX(0, waitlist_count - 1) WHERE id = ?").run(eventId);
+       
+       db.exec('COMMIT');
+       
+       // Advance to next person
+       advanceWaitlist(db, eventId);
+
+       res.json({ message: 'You passed on this seat.' });
+   } catch(error) {
+       db.exec('ROLLBACK');
+       res.status(500).json({ error: 'Failed to pass promotion.' });
+   }
+});
+
+
+/**
+ * DELETE /api/events/:id/register
+ * Student cancels registration (from confirmed, waitlisted, pending etc)
+ */
+router.delete('/:id/register', authenticate, (req, res) => {
+   const db = req.app.get('db');
+   const eventId = parseInt(req.params.id, 10);
+
+   db.exec('BEGIN IMMEDIATE');
+   try {
+       const reg = db.prepare("SELECT * FROM registrations WHERE event_id = ? AND user_id = ? AND status NOT IN ('cancelled', 'expired', 'rejected')").get(eventId, req.user.id);
+       if (!reg) {
+           db.exec('ROLLBACK');
+           return res.status(404).json({ error: 'Active registration not found.' });
+       }
+
+       db.prepare("UPDATE registrations SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(reg.id);
+       
+       if (['confirmed', 'pending_payment_approval'].includes(reg.status)) {
+           db.prepare("UPDATE events SET taken_seats = MAX(0, taken_seats - 1) WHERE id = ?").run(eventId);
+           db.exec('COMMIT');
+           advanceWaitlist(db, eventId);
+       } else if (['waitlisted', 'promoted'].includes(reg.status)) {
+           db.prepare("UPDATE events SET waitlist_count = MAX(0, waitlist_count - 1) WHERE id = ?").run(eventId);
+           db.exec('COMMIT');
+           if (reg.status === 'promoted') {
+               advanceWaitlist(db, eventId);
+           }
+       } else {
+           db.exec('COMMIT');
+       }
+
+       res.json({ message: 'Registration cancelled.' });
+   } catch(error) {
+       db.exec('ROLLBACK');
+       res.status(500).json({ error: 'Failed to cancel registration.' });
+   }
+});
+
+
+/**
  * GET /api/events/:id/registrations
- * Organizer or Admin views all registrations (with screenshots) for an event
+ * Organizer or Admin views all registrations (with screenshots and answers) for an event
  */
 router.get('/:id/registrations', authenticate, (req, res) => {
   const db = req.app.get('db');
@@ -544,17 +770,28 @@ router.get('/:id/registrations', authenticate, (req, res) => {
   }
 
   const registrations = db.prepare(`
-    SELECT id, event_id, user_id, user_name, user_email, is_paid, ticket_price, payment_screenshot, status, rejection_reason, created_at, updated_at
-    FROM registrations
-    WHERE event_id = ?
-    ORDER BY created_at DESC
+    SELECT r.id, r.event_id, r.user_id, r.user_name, r.user_email, r.is_paid, r.ticket_price, r.payment_screenshot, r.status, r.rejection_reason, r.waitlist_position, r.promoted_at, r.promotion_expires_at, r.answers, r.created_at, r.updated_at, u.year, u.department
+    FROM registrations r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.event_id = ?
+    ORDER BY 
+      CASE r.status
+        WHEN 'pending_payment_approval' THEN 1
+        WHEN 'confirmed' THEN 2
+        WHEN 'promoted' THEN 3
+        WHEN 'waitlisted' THEN 4
+        ELSE 5
+      END ASC,
+      r.waitlist_position ASC,
+      r.created_at DESC
   `).all(eventId);
 
   res.json({
     registrations: registrations.map(r => ({
       ...r,
       id: r.id.toString(),
-      isPaid: Boolean(r.is_paid)
+      isPaid: Boolean(r.is_paid),
+      answers: r.answers ? JSON.parse(r.answers) : {}
     }))
   });
 });
@@ -573,66 +810,91 @@ router.patch('/:id/registrations/:regId/status', authenticate, (req, res) => {
     return res.status(400).json({ error: 'Status must be "confirmed" or "rejected"' });
   }
 
-  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
-  if (!event) {
-    return res.status(404).json({ error: 'Event not found' });
+  db.exec('BEGIN IMMEDIATE');
+  try {
+      const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
+      if (!event) {
+          db.exec('ROLLBACK');
+          return res.status(404).json({ error: 'Event not found' });
+      }
+
+      if (req.user.role !== 'admin' && event.organizer_id !== req.user.id) {
+          db.exec('ROLLBACK');
+          return res.status(403).json({ error: 'Permission denied' });
+      }
+
+      const reg = db.prepare('SELECT * FROM registrations WHERE id = ? AND event_id = ?').get(regId, eventId);
+      if (!reg) {
+          db.exec('ROLLBACK');
+          return res.status(404).json({ error: 'Registration not found' });
+      }
+
+      // If approving (changing to confirmed):
+      if (status === 'confirmed' && reg.status !== 'confirmed') {
+        if (event.taken_seats >= event.total_seats && reg.status !== 'pending_payment_approval') { // pending payment already holds a seat conceptually if we do it that way, but actually we increased taken_seats on pending!
+          if (reg.status !== 'pending_payment_approval') {
+             db.exec('ROLLBACK');
+             return res.status(400).json({ error: 'Cannot approve: Event is already at maximum capacity!' });
+          }
+        }
+
+        db.prepare(`
+          UPDATE registrations SET
+            status = 'confirmed',
+            rejection_reason = NULL,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(regId);
+
+        // If it was waitlisted/promoted, increment taken_seats and decrement waitlist_count (shouldn't happen directly in normal flow, but just in case)
+        if (['waitlisted', 'promoted'].includes(reg.status)) {
+            db.prepare('UPDATE events SET taken_seats = taken_seats + 1, waitlist_count = MAX(0, waitlist_count - 1) WHERE id = ?').run(eventId);
+        }
+
+      } else if (status === 'rejected') {
+        // If it was previously holding a seat (confirmed or pending)
+        if (['confirmed', 'pending_payment_approval'].includes(reg.status)) {
+          db.prepare('UPDATE events SET taken_seats = MAX(0, taken_seats - 1) WHERE id = ?').run(eventId);
+        } else if (['waitlisted', 'promoted'].includes(reg.status)) {
+          db.prepare('UPDATE events SET waitlist_count = MAX(0, waitlist_count - 1) WHERE id = ?').run(eventId);
+        }
+
+        db.prepare(`
+          UPDATE registrations SET
+            status = 'rejected',
+            rejection_reason = ?,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(rejectionReason || 'Payment verification rejected.', regId);
+      }
+
+      db.exec('COMMIT');
+
+      // If rejected and it held a seat, advance waitlist
+      if (status === 'rejected' && ['confirmed', 'pending_payment_approval'].includes(reg.status)) {
+         advanceWaitlist(db, eventId);
+      }
+
+      const updatedReg = db.prepare('SELECT * FROM registrations WHERE id = ?').get(regId);
+      const updatedEvent = db.prepare('SELECT taken_seats, total_seats FROM events WHERE id = ?').get(eventId);
+
+      res.json({
+        message: status === 'confirmed' ? 'Registration approved! Student has officially joined the event.' : 'Registration rejected.',
+        registration: {
+          ...updatedReg,
+          id: updatedReg.id.toString(),
+          isPaid: Boolean(updatedReg.is_paid),
+          answers: updatedReg.answers ? JSON.parse(updatedReg.answers) : {}
+        },
+        eventSeats: {
+          takenSeats: updatedEvent.taken_seats,
+          totalSeats: updatedEvent.total_seats
+        }
+      });
+  } catch(error) {
+      db.exec('ROLLBACK');
+      res.status(500).json({ error: 'Failed to update registration status.' });
   }
-
-  if (req.user.role !== 'admin' && event.organizer_id !== req.user.id) {
-    return res.status(403).json({ error: 'Permission denied' });
-  }
-
-  const reg = db.prepare('SELECT * FROM registrations WHERE id = ? AND event_id = ?').get(regId, eventId);
-  if (!reg) {
-    return res.status(404).json({ error: 'Registration not found' });
-  }
-
-  // If approving (changing to confirmed):
-  if (status === 'confirmed' && reg.status !== 'confirmed') {
-    if (event.taken_seats >= event.total_seats) {
-      return res.status(400).json({ error: 'Cannot approve: Event is already at maximum capacity!' });
-    }
-
-    db.prepare(`
-      UPDATE registrations SET
-        status = 'confirmed',
-        rejection_reason = NULL,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(regId);
-
-    // Increment taken seats by 1 (reducing available seats by 1)
-    db.prepare('UPDATE events SET taken_seats = taken_seats + 1 WHERE id = ?').run(eventId);
-  } else if (status === 'rejected') {
-    // If it was previously confirmed, decrement taken seats
-    if (reg.status === 'confirmed') {
-      db.prepare('UPDATE events SET taken_seats = MAX(0, taken_seats - 1) WHERE id = ?').run(eventId);
-    }
-
-    db.prepare(`
-      UPDATE registrations SET
-        status = 'rejected',
-        rejection_reason = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(rejectionReason || 'Payment verification rejected.', regId);
-  }
-
-  const updatedReg = db.prepare('SELECT * FROM registrations WHERE id = ?').get(regId);
-  const updatedEvent = db.prepare('SELECT taken_seats, total_seats FROM events WHERE id = ?').get(eventId);
-
-  res.json({
-    message: status === 'confirmed' ? 'Registration approved! Student has officially joined the event.' : 'Registration rejected.',
-    registration: {
-      ...updatedReg,
-      id: updatedReg.id.toString(),
-      isPaid: Boolean(updatedReg.is_paid)
-    },
-    eventSeats: {
-      takenSeats: updatedEvent.taken_seats,
-      totalSeats: updatedEvent.total_seats
-    }
-  });
 });
 
 /**
@@ -653,10 +915,10 @@ router.get('/my-registrations', authenticate, (req, res) => {
     registrations: regs.map(r => ({
       ...r,
       id: r.id.toString(),
-      isPaid: Boolean(r.is_paid)
+      isPaid: Boolean(r.is_paid),
+      answers: r.answers ? JSON.parse(r.answers) : {}
     }))
   });
 });
 
 module.exports = router;
-

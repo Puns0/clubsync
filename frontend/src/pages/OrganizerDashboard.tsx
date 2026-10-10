@@ -66,6 +66,10 @@ interface EventItem {
   status: 'draft' | 'pending_approval' | 'approved' | 'rejected';
   rejectionReason?: string;
   isLive: boolean;
+  eligibleYears?: string[];
+  eligibleDepartments?: string[];
+  customQuestions?: string[];
+  demoMode?: boolean;
   createdAt: string;
 }
 
@@ -78,8 +82,14 @@ export interface RegistrationItem {
   isPaid: boolean;
   ticket_price: number;
   payment_screenshot: string | null;
-  status: 'pending_payment_approval' | 'confirmed' | 'rejected';
+  status: 'pending_payment_approval' | 'confirmed' | 'rejected' | 'waitlisted' | 'promoted' | 'cancelled' | 'expired';
   rejection_reason: string | null;
+  waitlist_position?: number;
+  promoted_at?: string;
+  promotion_expires_at?: string;
+  answers?: Record<string, string>;
+  year?: string;
+  department?: string;
   created_at: string;
 }
 
@@ -122,6 +132,13 @@ export default function OrganizerDashboard() {
   const [pdfName, setPdfName] = useState<string | null>(null);
   const [pdfData, setPdfData] = useState<string | null>(null);
   const [qrPreview, setQrPreview] = useState<string | null>(null);
+
+  // Advanced / Waitlist fields
+  const [eligibleYears, setEligibleYears] = useState<string[]>([]);
+  const [eligibleDepartments, setEligibleDepartments] = useState<string[]>([]);
+  const [customQuestions, setCustomQuestions] = useState<string[]>([]);
+  const [newQuestion, setNewQuestion] = useState('');
+  const [demoMode, setDemoMode] = useState(false);
 
   // Status feedback
   const [submitting, setSubmitting] = useState(false);
@@ -505,7 +522,11 @@ export default function OrganizerDashboard() {
           imageUrl: imagePreview,
           pdfUrl: pdfData,
           pdfName,
-          status: submitStatus
+          status: submitStatus,
+          eligibleYears,
+          eligibleDepartments,
+          customQuestions,
+          demoMode
         })
       });
 
@@ -1081,6 +1102,159 @@ export default function OrganizerDashboard() {
                 </div>
               </div>
 
+              {/* Eligibility Restrictions (Year / Department) */}
+              <div className="p-5 bg-brand-offwhite rounded-2xl border border-brand-ink/10 space-y-5">
+                <div>
+                  <h3 className="text-base font-bold text-brand-ink flex items-center gap-2">
+                    <Users className="w-5 h-5 text-brand-vermilion" />
+                    Eligibility Restrictions
+                  </h3>
+                  <p className="text-xs text-brand-ink/60 mt-0.5">
+                    Leave blank to allow all students. Select specific years or departments to restrict who can register.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {/* Year Restriction */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-brand-ink/70">
+                      Allowed Years
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {['1st Year', '2nd Year', '3rd Year', '4th Year'].map((yr) => (
+                        <button
+                          key={yr}
+                          type="button"
+                          onClick={() => {
+                            setEligibleYears((prev) =>
+                              prev.includes(yr) ? prev.filter((y) => y !== yr) : [...prev, yr]
+                            );
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                            eligibleYears.includes(yr)
+                              ? 'bg-brand-vermilion text-white border-brand-vermilion shadow-sm'
+                              : 'bg-white text-brand-ink/60 border-brand-ink/10 hover:border-brand-ink/30'
+                          }`}
+                        >
+                          {yr}
+                        </button>
+                      ))}
+                    </div>
+                    {eligibleYears.length > 0 && (
+                      <p className="text-[11px] text-brand-vermilion font-semibold">
+                        Only {eligibleYears.join(', ')} students can register.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Department Restriction */}
+                  <div className="space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-brand-ink/70">
+                      Allowed Departments
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {['CSE', 'ECE', 'EEE', 'ME', 'CE', 'IT', 'AIDS', 'AIML'].map((dept) => (
+                        <button
+                          key={dept}
+                          type="button"
+                          onClick={() => {
+                            setEligibleDepartments((prev) =>
+                              prev.includes(dept) ? prev.filter((d) => d !== dept) : [...prev, dept]
+                            );
+                          }}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                            eligibleDepartments.includes(dept)
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                              : 'bg-white text-brand-ink/60 border-brand-ink/10 hover:border-brand-ink/30'
+                          }`}
+                        >
+                          {dept}
+                        </button>
+                      ))}
+                    </div>
+                    {eligibleDepartments.length > 0 && (
+                      <p className="text-[11px] text-indigo-700 font-semibold">
+                        Only {eligibleDepartments.join(', ')} students can register.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Questions Builder */}
+              <div className="p-5 bg-brand-offwhite rounded-2xl border border-brand-ink/10 space-y-4">
+                <div>
+                  <h3 className="text-base font-bold text-brand-ink flex items-center gap-2">
+                    <ClipboardList className="w-5 h-5 text-brand-vermilion" />
+                    Custom Registration Questions
+                  </h3>
+                  <p className="text-xs text-brand-ink/60 mt-0.5">
+                    Add questions students must answer when registering (e.g., "Which semester are you in?", "College name", etc.). Name and email are auto-filled from their account.
+                  </p>
+                </div>
+
+                {/* Existing Questions */}
+                {customQuestions.length > 0 && (
+                  <div className="space-y-2">
+                    {customQuestions.map((q, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center gap-2 p-3 bg-white rounded-xl border border-brand-ink/10"
+                      >
+                        <span className="w-6 h-6 rounded-full bg-brand-vermilion/10 text-brand-vermilion text-xs font-extrabold flex items-center justify-center flex-shrink-0">
+                          {idx + 1}
+                        </span>
+                        <span className="text-sm font-medium text-brand-ink flex-1">{q}</span>
+                        <button
+                          type="button"
+                          onClick={() => setCustomQuestions((prev) => prev.filter((_, i) => i !== idx))}
+                          className="p-1 rounded-lg hover:bg-red-50 text-red-500 transition-colors"
+                          title="Remove question"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Add New Question */}
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="e.g. What is your semester?"
+                    value={newQuestion}
+                    onChange={(e) => setNewQuestion(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newQuestion.trim()) {
+                        e.preventDefault();
+                        setCustomQuestions((prev) => [...prev, newQuestion.trim()]);
+                        setNewQuestion('');
+                      }
+                    }}
+                    className="flex-1 p-3 bg-white border border-brand-ink/10 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-brand-vermilion/50"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newQuestion.trim()) {
+                        setCustomQuestions((prev) => [...prev, newQuestion.trim()]);
+                        setNewQuestion('');
+                      }
+                    }}
+                    className="px-4 py-2 bg-brand-vermilion text-white rounded-xl text-xs font-bold hover:bg-brand-vermilion/90 transition-all whitespace-nowrap"
+                  >
+                    + Add
+                  </button>
+                </div>
+
+                {customQuestions.length === 0 && (
+                  <p className="text-[11px] text-brand-ink/40 italic">
+                    No custom questions added yet. Students will only provide their name and email (auto-filled).
+                  </p>
+                )}
+              </div>
+
               {/* Action Buttons & Bottom Error Bar */}
               <div className="space-y-4 pt-4 border-t border-brand-ink/10">
                 {/* Immediate Feedback Bar Right Above the Buttons */}
@@ -1402,6 +1576,37 @@ export default function OrganizerDashboard() {
                             </span>
                           </div>
                           <p className="text-xs text-brand-ink/60">{reg.user_email}</p>
+
+                          {/* Year & Department Badges */}
+                          {(reg.year || reg.department) && (
+                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                              {reg.year && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                  {reg.year}
+                                </span>
+                              )}
+                              {reg.department && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                                  {reg.department}
+                                </span>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Custom Question Answers */}
+                          {reg.answers && Object.keys(reg.answers).length > 0 && (
+                            <div className="mt-1.5 p-2.5 bg-brand-offwhite/80 rounded-xl border border-brand-ink/5 space-y-1">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-brand-ink/40">
+                                Responses
+                              </span>
+                              {Object.entries(reg.answers).map(([question, answer]) => (
+                                <div key={question} className="text-xs">
+                                  <span className="font-semibold text-brand-ink/70">{question}: </span>
+                                  <span className="text-brand-ink">{String(answer)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
                           {/* Payment Screenshot Thumbnail & Lightbox Trigger */}
                           {reg.isPaid && (
