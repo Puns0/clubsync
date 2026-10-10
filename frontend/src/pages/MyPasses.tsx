@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Ticket, 
@@ -8,10 +8,12 @@ import {
   Clock, 
   CheckCircle, 
   Sparkles, 
-  X
+  X,
+  Award
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import API_BASE_URL from '../lib/api';
+import CertificateModal from '../components/CertificateModal';
 
 interface StudentPass {
   id: string;
@@ -33,6 +35,7 @@ interface StudentPass {
   ticketToken?: string;
   checkedIn: boolean;
   checkedInAt?: string;
+  certificatesIssued?: boolean;
   created_at: string;
 }
 
@@ -46,6 +49,9 @@ export default function MyPasses() {
   const [selectedPassModal, setSelectedPassModal] = useState<StudentPass | null>(null);
   const [modalQrUrl, setModalQrUrl] = useState<string | null>(null);
   const [loadingModalQr, setLoadingModalQr] = useState(false);
+
+  // Certificate Modal State
+  const [activeCertPass, setActiveCertPass] = useState<StudentPass | null>(null);
 
   // Fetch student's registrations / passes
   const fetchMyPasses = async () => {
@@ -253,14 +259,36 @@ export default function MyPasses() {
                       )}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => openQrPassModal(pass)}
-                      className="w-full py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
-                    >
-                      <QrCode className="w-4 h-4" />
-                      Show QR Pass for Venue Entry
-                    </button>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openQrPassModal(pass)}
+                        className="w-full py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                      >
+                        <QrCode className="w-4 h-4" />
+                        Show QR Pass for Venue Entry
+                      </button>
+
+                      {pass.certificatesIssued ? (
+                        <button
+                          type="button"
+                          onClick={() => setActiveCertPass(pass)}
+                          className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs rounded-xl shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-95"
+                        >
+                          <Award className="w-4 h-4" />
+                          Download Participation Certificate 📜
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setActiveCertPass(pass)}
+                          className="w-full py-2 bg-brand-offwhite hover:bg-brand-ink/5 text-brand-ink/70 font-bold text-xs rounded-xl border border-brand-ink/10 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Award className="w-4 h-4 text-brand-vermilion" />
+                          Preview Certificate
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ) : pass.status === 'pending_approval' ? (
                   <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-1">
@@ -362,6 +390,17 @@ export default function MyPasses() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Student Certificate Download Modal */}
+      {activeCertPass && (
+        <CertificateModal
+          eventId={activeCertPass.event_id}
+          token={token}
+          studentName={activeCertPass.user_name}
+          isOrganizer={false}
+          onClose={() => setActiveCertPass(null)}
+        />
+      )}
     </div>
   );
 }

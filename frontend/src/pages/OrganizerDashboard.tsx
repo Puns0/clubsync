@@ -15,6 +15,7 @@ import {
   FileText, 
   QrCode, 
   Scan,
+  Award,
   AlertCircle, 
   AlertTriangle,
   ArrowUp,
@@ -31,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import API_BASE_URL from '../lib/api';
+import CertificateModal from '../components/CertificateModal';
 
 const VENUES = [
   'Lab 1',
@@ -73,6 +75,8 @@ interface EventItem {
   eligibleDepartments?: string[];
   customQuestions?: string[];
   demoMode?: boolean;
+  certificateTemplate?: string;
+  certificatesIssued?: number;
   createdAt: string;
 }
 
@@ -120,9 +124,10 @@ export default function OrganizerDashboard() {
   const [activeScreenshotModal, setActiveScreenshotModal] = useState<string | null>(null);
   const [processingRegId, setProcessingRegId] = useState<string | null>(null);
 
-  // QR Code viewing & Scanner modals
+  // QR Code viewing, Scanner & Certificate Designer modals
   const [viewingQrReg, setViewingQrReg] = useState<RegistrationItem | null>(null);
   const [activeScannerEvent, setActiveScannerEvent] = useState<EventItem | null>(null);
+  const [activeCertDesignerEvent, setActiveCertDesignerEvent] = useState<EventItem | null>(null);
 
 
   // Form Fields
@@ -1438,6 +1443,13 @@ export default function OrganizerDashboard() {
                     </button>
 
                     <button
+                      onClick={() => setActiveCertDesignerEvent(ev)}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-xl text-xs font-bold transition-all border border-purple-200"
+                    >
+                      <Award className="w-3.5 h-3.5" /> Issue Certificates 📜
+                    </button>
+
+                    <button
                       onClick={() => setPreviewEvent(ev)}
                       className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-brand-offwhite text-brand-ink rounded-xl text-xs font-bold hover:bg-brand-ink/10 transition-all border border-brand-ink/10"
                     >
@@ -1553,14 +1565,24 @@ export default function OrganizerDashboard() {
                     </p>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setActiveScannerEvent(registrationsEvent)}
-                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
-                  >
-                    <Scan className="w-4 h-4" />
-                    Scan & Validate QR Pass
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setActiveScannerEvent(registrationsEvent)}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
+                    >
+                      <Scan className="w-4 h-4" />
+                      Scan & Validate QR Pass
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveCertDesignerEvent(registrationsEvent)}
+                      className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
+                    >
+                      <Award className="w-4 h-4" />
+                      Design & Issue Certificates 📜
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1990,6 +2012,30 @@ export default function OrganizerDashboard() {
           onVerificationSuccess={() => {
             if (registrationsEvent && registrationsEvent.id === activeScannerEvent.id) {
               fetchRegistrationsForEvent(registrationsEvent);
+            }
+          }}
+        />
+      )}
+
+      {/* Certificate Designer Modal for Organizer */}
+      {activeCertDesignerEvent && (
+        <CertificateModal
+          event={{
+            id: activeCertDesignerEvent.id,
+            title: activeCertDesignerEvent.title,
+            certificateTemplate: activeCertDesignerEvent.certificateTemplate,
+            certificatesIssued: activeCertDesignerEvent.certificatesIssued
+          }}
+          isOrganizer={true}
+          token={token}
+          onClose={() => setActiveCertDesignerEvent(null)}
+          onPublished={() => {
+            fetchMyEvents();
+            if (registrationsEvent && registrationsEvent.id === activeCertDesignerEvent.id) {
+              setRegistrationsEvent({
+                ...registrationsEvent,
+                certificatesIssued: 1
+              });
             }
           }}
         />

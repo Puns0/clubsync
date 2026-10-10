@@ -140,6 +140,8 @@ function initDatabase() {
   safeAlter('ALTER TABLE events ADD COLUMN eligible_departments TEXT');
   safeAlter('ALTER TABLE events ADD COLUMN custom_questions TEXT');
   safeAlter('ALTER TABLE events ADD COLUMN demo_mode INTEGER DEFAULT 0');
+  safeAlter('ALTER TABLE events ADD COLUMN certificate_template TEXT');
+  safeAlter('ALTER TABLE events ADD COLUMN certificates_issued INTEGER DEFAULT 0');
 
   // Registrations table additions
   safeAlter('ALTER TABLE registrations ADD COLUMN ticket_token TEXT');

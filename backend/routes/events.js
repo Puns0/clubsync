@@ -969,7 +969,7 @@ router.patch('/:id/registrations/:regId/status', authenticate, async (req, res) 
 router.get('/my-registrations', authenticate, (req, res) => {
   const db = req.app.get('db');
   const regs = db.prepare(`
-    SELECT r.*, e.title as event_title, e.date as event_date, e.time_start, e.time_end, e.venue, e.club_name
+    SELECT r.*, e.title as event_title, e.date as event_date, e.time_start, e.time_end, e.venue, e.club_name, e.certificates_issued, e.certificate_template
     FROM registrations r
     INNER JOIN events e ON r.event_id = e.id
     WHERE r.user_id = ?
@@ -990,7 +990,9 @@ router.get('/my-registrations', authenticate, (req, res) => {
       answers: r.answers ? JSON.parse(r.answers) : {},
       ticketToken: tokenToUse,
       checkedIn: Boolean(r.checked_in),
-      checkedInAt: r.checked_in_at
+      checkedInAt: r.checked_in_at,
+      certificatesIssued: Boolean(r.certificates_issued),
+      certificateTemplate: r.certificate_template ? JSON.parse(r.certificate_template) : null
     };
   });
 
@@ -1129,6 +1131,90 @@ router.get('/:id/registrations/:regId/qr', authenticate, async (req, res) => {
     qrDataUrl,
     checkedIn: Boolean(reg.checked_in),
     checkedInAt: reg.checked_in_at
+  });
+});
+
+/**
+ * PATCH /api/events/:id/certificate-template
+ * Organizer configures certificate design and issues certificates to participants
+ */
+router.patch('/:id/certificate-template', authenticate, (req, res) => {
+  const db = req.app.get('db');
+  const eventId = parseInt(req.params.id, 10);
+  const { template, issueNow = false } = req.body;
+
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
+  if (!event) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+
+  if (req.user.role !== 'admin' && event.organizer_id !== req.user.id) {
+    return res.status(403).json({ error: 'Permission denied' });
+  }
+
+  const templateStr = template ? JSON.stringify(template) : event.certificate_template;
+  const certificatesIssued = issueNow ? 1 : (event.certificates_issued ? 1 : 0);
+
+  db.prepare(`
+    UPDATE events SET
+      certificate_template = ?,
+      certificates_issued = ?,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(templateStr, certificatesIssued, eventId);
+
+  res.json({
+    message: issueNow ? 'Certificates published & issued to participants!' : 'Certificate template saved.',
+    certificatesIssued: Boolean(certificatesIssued),
+    certificateTemplate: templateStr ? JSON.parse(templateStr) : null
+  });
+});
+
+/**
+ * GET /api/events/:id/certificate
+ * Student or Organizer fetches certificate details for dynamic generation
+ */
+router.get('/:id/certificate', authenticate, (req, res) => {
+  const db = req.app.get('db');
+  const eventId = parseInt(req.params.id, 10);
+
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
+  if (!event) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+
+  const isOrganizer = req.user.role === 'admin' || event.organizer_id === req.user.id;
+
+  if (!isOrganizer && !event.certificates_issued) {
+    return res.status(400).json({ error: 'Certificates have not been published by the organizer yet.' });
+  }
+
+  // Check if student has a confirmed registration
+  let reg = null;
+  if (!isOrganizer) {
+    reg = db.prepare("SELECT * FROM registrations WHERE event_id = ? AND user_id = ? AND status = 'confirmed'").get(eventId, req.user.id);
+    if (!reg) {
+      return res.status(403).json({ error: 'You must have a confirmed registration to access a certificate for this event.' });
+    }
+  }
+
+  const template = event.certificate_template ? JSON.parse(event.certificate_template) : {
+    theme: 'gold_crest',
+    title: 'CERTIFICATE OF PARTICIPATION',
+    subtitle: 'This is proudly presented to',
+    message: 'for active participation and successful completion of the event',
+    issuerName: event.organizer_name || event.club_name,
+    issuerTitle: 'Event Organizer'
+  };
+
+  res.json({
+    eventId: event.id.toString(),
+    eventTitle: event.title,
+    clubName: event.club_name,
+    eventDate: event.date,
+    studentName: isOrganizer ? (req.query.sampleStudentName || 'Sample Student Name') : (reg ? reg.user_name : req.user.name),
+    certificatesIssued: Boolean(event.certificates_issued),
+    template
   });
 });
 
