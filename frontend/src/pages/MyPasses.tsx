@@ -8,9 +8,7 @@ import {
   Clock, 
   CheckCircle, 
   Sparkles, 
-  X,
-  Copy,
-  Check
+  X
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import API_BASE_URL from '../lib/api';
@@ -48,7 +46,6 @@ export default function MyPasses() {
   const [selectedPassModal, setSelectedPassModal] = useState<StudentPass | null>(null);
   const [modalQrUrl, setModalQrUrl] = useState<string | null>(null);
   const [loadingModalQr, setLoadingModalQr] = useState(false);
-  const [copiedToken, setCopiedToken] = useState(false);
 
   // Fetch student's registrations / passes
   const fetchMyPasses = async () => {
@@ -91,12 +88,6 @@ export default function MyPasses() {
     } finally {
       setLoadingModalQr(false);
     }
-  };
-
-  const copyTokenToClipboard = (tokenStr: string) => {
-    navigator.clipboard.writeText(tokenStr);
-    setCopiedToken(true);
-    setTimeout(() => setCopiedToken(false), 2000);
   };
 
   const filteredPasses = passes.filter(p => {
@@ -262,14 +253,6 @@ export default function MyPasses() {
                       )}
                     </div>
 
-                    {pass.ticketToken && (
-                      <div className="inline-block bg-white p-2.5 rounded-xl border border-orange-200 shadow-sm">
-                        <code className="text-xs font-mono font-bold text-brand-ink tracking-wider">
-                          {pass.ticketToken}
-                        </code>
-                      </div>
-                    )}
-
                     <button
                       type="button"
                       onClick={() => openQrPassModal(pass)}
@@ -356,27 +339,6 @@ export default function MyPasses() {
                   </div>
                 )}
               </div>
-
-              {/* Token Copy Section */}
-              {selectedPassModal.ticketToken && (
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-brand-ink/40 block">
-                    Cryptographic Ticket Token
-                  </span>
-                  <div className="inline-flex items-center gap-2 bg-brand-offwhite px-3 py-1.5 rounded-xl border border-brand-ink/10">
-                    <code className="text-xs font-mono font-bold text-brand-ink">
-                      {selectedPassModal.ticketToken}
-                    </code>
-                    <button
-                      onClick={() => copyTokenToClipboard(selectedPassModal.ticketToken!)}
-                      className="text-brand-ink/50 hover:text-brand-ink transition-colors cursor-pointer"
-                      title="Copy Token"
-                    >
-                      {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {/* Gate Verification Status */}
               <div className="pt-2">

@@ -173,8 +173,7 @@ function advanceWaitlist(db, eventId) {
               <div style="text-align: center; margin: 25px 0; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
                 <p style="font-size: 13px; font-weight: bold; color: #64748b; margin: 0 0 12px 0; text-transform: uppercase; letter-spacing: 1px;">Official Entry QR Pass</p>
                 <img src="${qrDataUrl}" alt="Event Entry QR Pass" style="width: 200px; height: 200px; display: block; margin: 0 auto; border: 4px solid #ffffff; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);" />
-                <p style="font-family: monospace; font-size: 14px; color: #0f172a; margin: 12px 0 0 0; font-weight: bold; letter-spacing: 0.5px;">${ticketToken}</p>
-                <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Show this QR code at the venue entry for instant attendance scan.</p>
+                <p style="font-size: 12px; color: #64748b; margin: 8px 0 0 0;">Show this QR code at the venue entry for instant attendance scan.</p>
               </div>
               ` : ''}
               <div style="text-align: center; margin: 30px 0 10px 0;">
