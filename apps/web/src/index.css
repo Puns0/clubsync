@@ -1,0 +1,153 @@
+@import url("https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Familjen+Grotesk:ital,wght@0,400..700;1,400..700&display=swap");
+
+@import "tailwindcss";
+
+@theme {
+  /* ─── Colors ─── */
+  --color-paper: #F6F1E7;
+  --color-paper-deep: #EDE6D6;
+
+  --color-ink: #141210;
+  --color-ink-soft: #5A544B;
+  --color-ink-faint: #A39B8C;
+
+  --color-vermilion: #E8431F;
+  --color-vermilion-10: #FBE9E4;
+  --color-vermilion-20: #F6D2C9;
+  --color-vermilion-40: #F0A593;
+  --color-vermilion-60: #EC7A5E;
+  --color-vermilion-80: #E85D3E;
+
+  /* ─── Fonts ─── */
+  --font-family-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --font-family-body: "Familjen Grotesk", ui-sans-serif, system-ui, sans-serif;
+
+  /* ─── Border Radius ─── */
+  --radius-ticket: 6px;
+
+  /* ─── Box Shadows ─── */
+  --shadow-stamp: 3px 3px 0px 0px #141210;
+  --shadow-stamp-sm: 2px 2px 0px 0px #141210;
+  --shadow-stamp-vermilion: 3px 3px 0px 0px #E8431F;
+
+  /* ─── Animations ─── */
+  --animate-pulse-soft: pulse-soft 1.8s ease-in-out infinite;
+
+  @keyframes pulse-soft {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+}
+
+/* ─── Base ─── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-family-body);
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  line-height: 1.5;
+}
+
+/* ─── Typography ─── */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family-display);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+/* Tabular numerals for counters, times, positions */
+.font-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─── Focus ─── */
+:focus-visible {
+  outline: 2px solid var(--color-vermilion);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ─── Scrollbar (subtle) ─── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-paper-deep);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-faint);
+  border-radius: 3px;
+}
+
+/* ─── Selection ─── */
+::selection {
+  background-color: var(--color-vermilion-20);
+  color: var(--color-ink);
+}
+
+/* ─── Reduced motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ─── Ticket notch helper ─── */
+.ticket-notch {
+  position: relative;
+}
+
+.ticket-notch::before,
+.ticket-notch::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background-color: var(--color-paper);
+  border-radius: 50%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.ticket-notch::before {
+  left: -8px;
+}
+
+.ticket-notch::after {
+  right: -8px;
+}
+
+/* ─── Safe area padding ─── */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ─── Hide scrollbar but keep scrollable ─── */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}

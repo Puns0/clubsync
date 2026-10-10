@@ -1,0 +1,14 @@
+{
+  "name": "ClubSync",
+  "short_name": "ClubSync",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F6F1E7",
+  "theme_color": "#E8431F",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any"
+    }
+  ]
+}
