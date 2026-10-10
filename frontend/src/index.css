@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Bricolage Grotesque', sans-serif;
+  
+  --color-brand-offwhite: #F4F1ED;
+  --color-brand-ink: #1A1A1A;
+  --color-brand-vermilion: #E34234;
+  --color-brand-card: #FFFFFF;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-brand-offwhite);
+    color: var(--color-brand-ink);
+    font-family: var(--font-sans);
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
