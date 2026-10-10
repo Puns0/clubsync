@@ -44,7 +44,6 @@ export default function EventCard({
 
   return (
     <motion.div 
-      whileHover={{ y: -4 }}
       onClick={onClick}
       className="bg-white rounded-2xl p-5 border border-brand-ink/10 shadow-sm hover:shadow-md transition-all flex flex-col h-full relative overflow-hidden group cursor-pointer"
     >
@@ -72,7 +71,7 @@ export default function EventCard({
           <img
             src={imageUrl}
             alt={title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            className="w-full h-full object-cover"
           />
         </div>
       )}

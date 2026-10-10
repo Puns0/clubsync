@@ -10,8 +10,7 @@ export default function ClubChip({ name, id }: ClubChipProps) {
   return (
     <Link to={`/club/${id}`}>
       <motion.div 
-        whileHover={{ scale: 1.05 }}
-        whileTap={{ scale: 0.95 }}
+        whileTap={{ scale: 0.98 }}
         className="px-4 py-2 bg-white border border-brand-ink/10 rounded-full whitespace-nowrap text-sm font-medium hover:border-brand-vermilion transition-colors shadow-sm"
       >
         {name}
