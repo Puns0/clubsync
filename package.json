@@ -1,0 +1,20 @@
+{
+  "name": "clubsync",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev:api & npm run dev:web",
+    "dev:api": "npm run dev -w @clubsync/api",
+    "dev:web": "npm run dev -w @clubsync/web",
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:setup": "npm run db:setup -w @clubsync/api",
+    "gen:secrets": "node scripts/gen-secrets.mjs",
+    "verify-ownership": "node scripts/verify-ownership.mjs"
+  }
+}

@@ -1,0 +1,313 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────────────────
+
+enum Role {
+  STUDENT
+  ORGANIZER
+  ADMIN
+}
+
+enum OrganizerStatus {
+  NONE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum EventStatus {
+  SCHEDULED
+  CANCELLED
+}
+
+enum RegistrationStatus {
+  CONFIRMED
+  WAITLISTED
+  PROMOTED_PENDING
+  CANCELLED
+  ATTENDED
+  NO_SHOW
+}
+
+enum CancelReason {
+  USER
+  EXPIRED
+  DECLINED
+  ORGANIZER
+  SWAPPED
+  RELEASED_FOR_PREFERRED
+  EVENT_CANCELLED
+}
+
+enum OtpPurpose {
+  VERIFY_EMAIL
+  PASSWORD_RESET
+}
+
+enum CalendarEntryType {
+  EXAM
+  HOLIDAY
+}
+
+enum NotificationType {
+  SEAT_CONFIRMED
+  WAITLISTED
+  PROMOTED
+  PROMOTION_EXPIRED
+  SEAT_RELEASED
+  EVENT_UPDATED
+  EVENT_CANCELLED
+  CLASH_WARNING
+  REMINDER
+  CHECKED_IN
+  ORGANIZER_APPROVED
+  ORGANIZER_REJECTED
+}
+
+// ── Models ───────────────────────────────────────────────────────
+
+model User {
+  id              String          @id @default(uuid())
+  name            String
+  email           String          @unique
+  passwordHash    String
+  role            Role            @default(STUDENT)
+  organizerStatus OrganizerStatus @default(NONE)
+  organizerNote   String?
+  usnEnc          String
+  usnHash         String          @unique
+  phoneEnc        String
+  department      String
+  year            Int
+  emailVerifiedAt DateTime?       @db.Timestamptz(3)
+  disabledAt      DateTime?       @db.Timestamptz(3)
+  failedLoginCount Int            @default(0)
+  lockedUntil     DateTime?       @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+
+  sessions        Session[]
+  otpCodes        OtpCode[]
+  clubLinks       ClubOrganizer[]
+  approvedClubOrganizers ClubOrganizer[] @relation("ApprovedBy")
+  registrations   Registration[]
+  notifications   Notification[]
+  createdEvents   Event[]         @relation("EventCreator")
+
+  @@map("users")
+}
+
+model Session {
+  id         String   @id @default(uuid())
+  userId     String
+  tokenHash  String   @unique
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime @db.Timestamptz(3)
+  ip         String?
+  userAgent  String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model OtpCode {
+  id         String     @id @default(uuid())
+  userId     String
+  purpose    OtpPurpose
+  codeHash   String
+  attempts   Int        @default(0)
+  expiresAt  DateTime   @db.Timestamptz(3)
+  consumedAt DateTime?  @db.Timestamptz(3)
+  createdAt  DateTime   @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, createdAt])
+  @@map("otp_codes")
+}
+
+model Club {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String    @default("")
+  archivedAt  DateTime? @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+
+  organizers ClubOrganizer[]
+  events     Event[]
+
+  @@map("clubs")
+}
+
+model ClubOrganizer {
+  userId       String
+  clubId       String
+  approvedById String?
+  approvedAt   DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+
+  user       User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club       Club  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  approvedBy User? @relation("ApprovedBy", fields: [approvedById], references: [id])
+
+  @@id([userId, clubId])
+  @@map("club_organizers")
+}
+
+model Venue {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  events Event[]
+
+  @@map("venues")
+}
+
+model Event {
+  id                    String      @id @default(uuid())
+  clubId                String
+  title                 String
+  description           String      @default("")
+  venueId               String
+  startsAt              DateTime    @db.Timestamptz(3)
+  endsAt                DateTime    @db.Timestamptz(3)
+  capacity              Int
+  eligibleYears         Int[]
+  eligibleDepartments   String[]
+  facultyCoordinator    String?
+  status                EventStatus @default(SCHEDULED)
+  createdById           String
+  createdAt             DateTime    @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime    @updatedAt @db.Timestamptz(3)
+
+  club          Club           @relation(fields: [clubId], references: [id])
+  venue         Venue          @relation(fields: [venueId], references: [id])
+  createdBy     User           @relation("EventCreator", fields: [createdById], references: [id])
+  registrations Registration[]
+  letters       Letter[]
+
+  @@index([startsAt, endsAt])
+  @@index([clubId, startsAt])
+  @@index([venueId, startsAt])
+  @@map("events")
+}
+
+model Registration {
+  id               String             @id @default(uuid())
+  eventId          String
+  userId           String
+  status           RegistrationStatus
+  waitlistPosition Int?
+  waitlistedAt     DateTime?          @db.Timestamptz(3)
+  isPreferred      Boolean            @default(false)
+  promotedAt       DateTime?          @db.Timestamptz(3)
+  expiresAt        DateTime?          @db.Timestamptz(3)
+  cancelledAt      DateTime?          @db.Timestamptz(3)
+  cancelReason     CancelReason?
+  conflictsWith    Json?
+  qrTokenHash      String?
+  qrUsedAt         DateTime?          @db.Timestamptz(3)
+  attendedAt       DateTime?          @db.Timestamptz(3)
+  checkedInById    String?
+  createdAt        DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime           @updatedAt @db.Timestamptz(3)
+
+  event Event @relation(fields: [eventId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@index([eventId, status])
+  @@index([userId, status])
+  @@index([status, expiresAt])
+  @@map("registrations")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  payload   Json             @default("{}")
+  readAt    DateTime?        @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String?
+  action     String
+  targetType String
+  targetId   String?
+  meta       Json     @default("{}")
+  ip         String?
+  at         DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([at])
+  @@index([actorId])
+  @@map("audit_log")
+}
+
+model Setting {
+  key         String   @id
+  value       Json
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  updatedById String?
+
+  @@map("settings")
+}
+
+// ── Part 4 models ────────────────────────────────────────────────
+
+model TimetableSlot {
+  id          String @id @default(uuid())
+  department  String
+  semester    Int
+  section     String
+  dayOfWeek   Int
+  startMinute Int
+  endMinute   Int
+  subject     String
+  room        String?
+
+  @@index([department, semester, section])
+  @@map("timetable_slots")
+}
+
+model AcademicCalendarEntry {
+  id        String            @id @default(uuid())
+  startDate DateTime          @db.Date
+  endDate   DateTime          @db.Date
+  type      CalendarEntryType
+  label     String
+
+  @@map("academic_calendar")
+}
+
+model Letter {
+  id             String   @id @default(uuid())
+  eventId        String
+  generatedById  String
+  includesOdList Boolean  @default(true)
+  payload        Json     @default("{}")
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  event Event @relation(fields: [eventId], references: [id])
+
+  @@map("letters")
+}

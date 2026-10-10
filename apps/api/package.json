@@ -1,0 +1,43 @@
+{
+  "name": "@clubsync/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:generate": "prisma generate",
+    "db:seed": "tsx seed/index.ts",
+    "db:setup": "npm run db:migrate && npm run db:generate && npm run db:seed",
+    "loadtest": "tsx scripts/loadtest.ts"
+  },
+  "dependencies": {
+    "@clubsync/shared": "*",
+    "@prisma/client": "^5.15.0",
+    "argon2": "^0.40.0",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.0",
+    "express-rate-limit": "^7.3.0",
+    "helmet": "^7.1.0",
+    "node-cron": "^3.0.3",
+    "pino": "^9.2.0",
+    "pino-pretty": "^11.2.0",
+    "resend": "^3.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.7",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "@types/node-cron": "^3.0.11",
+    "prisma": "^5.15.0",
+    "tsx": "^4.15.0",
+    "typescript": "^5.5.0",
+    "vitest": "^1.6.0"
+  }
+}
