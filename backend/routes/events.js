@@ -87,6 +87,9 @@ function formatEvent(e) {
     status: e.status,
     rejectionReason: e.rejection_reason || null,
     isLive: Boolean(e.is_live),
+    isEnded: Boolean(e.is_ended),
+    certificateTemplate: e.certificate_template || null,
+    certificatesIssued: Number(e.certificates_issued || 0),
     eligibleYears: e.eligible_years ? JSON.parse(e.eligible_years) : null,
     eligibleDepartments: e.eligible_departments ? JSON.parse(e.eligible_departments) : null,
     customQuestions: e.custom_questions ? JSON.parse(e.custom_questions) : [],
@@ -969,7 +972,7 @@ router.patch('/:id/registrations/:regId/status', authenticate, async (req, res) 
 router.get('/my-registrations', authenticate, (req, res) => {
   const db = req.app.get('db');
   const regs = db.prepare(`
-    SELECT r.*, e.title as event_title, e.date as event_date, e.time_start, e.time_end, e.venue, e.club_name, e.certificates_issued, e.certificate_template
+    SELECT r.*, e.title as event_title, e.date as event_date, e.time_start, e.time_end, e.venue, e.club_name, e.certificates_issued, e.certificate_template, e.is_ended
     FROM registrations r
     INNER JOIN events e ON r.event_id = e.id
     WHERE r.user_id = ?
@@ -991,6 +994,7 @@ router.get('/my-registrations', authenticate, (req, res) => {
       ticketToken: tokenToUse,
       checkedIn: Boolean(r.checked_in),
       checkedInAt: r.checked_in_at,
+      isEnded: Boolean(r.is_ended),
       certificatesIssued: Boolean(r.certificates_issued),
       certificateTemplate: r.certificate_template ? JSON.parse(r.certificate_template) : null
     };
@@ -1154,19 +1158,55 @@ router.patch('/:id/certificate-template', authenticate, (req, res) => {
 
   const templateStr = template ? JSON.stringify(template) : event.certificate_template;
   const certificatesIssued = issueNow ? 1 : (event.certificates_issued ? 1 : 0);
+  const isEnded = issueNow ? 1 : (event.is_ended ? 1 : 0);
 
   db.prepare(`
     UPDATE events SET
       certificate_template = ?,
       certificates_issued = ?,
+      is_ended = ?,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(templateStr, certificatesIssued, eventId);
+  `).run(templateStr, certificatesIssued, isEnded, eventId);
 
   res.json({
-    message: issueNow ? 'Certificates published & issued to participants!' : 'Certificate template saved.',
+    message: issueNow ? '🏁 Event ended & certificates issued to participants!' : 'Certificate template saved.',
+    isEnded: Boolean(isEnded),
     certificatesIssued: Boolean(certificatesIssued),
     certificateTemplate: templateStr ? JSON.parse(templateStr) : null
+  });
+});
+
+/**
+ * PATCH /api/events/:id/end-event
+ * Organizer explicitly marks an event as ended and activates certificates
+ */
+router.patch('/:id/end-event', authenticate, (req, res) => {
+  const db = req.app.get('db');
+  const eventId = parseInt(req.params.id, 10);
+
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
+  if (!event) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+
+  if (req.user.role !== 'admin' && event.organizer_id !== req.user.id) {
+    return res.status(403).json({ error: 'Permission denied' });
+  }
+
+  db.prepare(`
+    UPDATE events SET
+      is_ended = 1,
+      certificates_issued = 1,
+      is_live = 0,
+      updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(eventId);
+
+  res.json({
+    message: '🏁 Event marked as ended! Certificates are now available for all confirmed participants.',
+    isEnded: true,
+    certificatesIssued: true
   });
 });
 
@@ -1185,8 +1225,8 @@ router.get('/:id/certificate', authenticate, (req, res) => {
 
   const isOrganizer = req.user.role === 'admin' || event.organizer_id === req.user.id;
 
-  if (!isOrganizer && !event.certificates_issued) {
-    return res.status(400).json({ error: 'Certificates have not been published by the organizer yet.' });
+  if (!isOrganizer && (!event.is_ended && !event.certificates_issued)) {
+    return res.status(400).json({ error: 'Certificates will be available once the event has ended.' });
   }
 
   // Check if student has a confirmed registration

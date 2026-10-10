@@ -35,6 +35,7 @@ interface StudentPass {
   ticketToken?: string;
   checkedIn: boolean;
   checkedInAt?: string;
+  isEnded?: boolean;
   certificatesIssued?: boolean;
   created_at: string;
 }
@@ -269,7 +270,7 @@ export default function MyPasses() {
                         Show QR Pass for Venue Entry
                       </button>
 
-                      {pass.certificatesIssued ? (
+                      {pass.isEnded || pass.certificatesIssued ? (
                         <button
                           type="button"
                           onClick={() => setActiveCertPass(pass)}
@@ -279,14 +280,10 @@ export default function MyPasses() {
                           Download Participation Certificate 📜
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => setActiveCertPass(pass)}
-                          className="w-full py-2 bg-brand-offwhite hover:bg-brand-ink/5 text-brand-ink/70 font-bold text-xs rounded-xl border border-brand-ink/10 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                        >
-                          <Award className="w-4 h-4 text-brand-vermilion" />
-                          Preview Certificate
-                        </button>
+                        <div className="w-full py-2 px-3 bg-amber-50 text-amber-800 text-[11px] font-semibold rounded-xl border border-amber-200/80 flex items-center justify-center gap-1.5">
+                          <Award className="w-3.5 h-3.5 text-amber-600" />
+                          <span>Certificate available after event ends ⏳</span>
+                        </div>
                       )}
                     </div>
                   </div>

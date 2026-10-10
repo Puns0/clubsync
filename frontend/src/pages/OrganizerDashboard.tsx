@@ -16,6 +16,7 @@ import {
   QrCode, 
   Scan,
   Award,
+  Flag,
   AlertCircle, 
   AlertTriangle,
   ArrowUp,
@@ -71,6 +72,7 @@ interface EventItem {
   status: 'draft' | 'pending_approval' | 'approved' | 'rejected';
   rejectionReason?: string;
   isLive: boolean;
+  isEnded?: boolean;
   eligibleYears?: string[];
   eligibleDepartments?: string[];
   customQuestions?: string[];
@@ -374,6 +376,36 @@ export default function OrganizerDashboard() {
       alert(err.message);
     } finally {
       setProcessingRegId(null);
+    }
+  };
+
+  // End an event & release certificates
+  const handleEndEvent = async (event: EventItem) => {
+    if (!confirm(`End "${event.title}" now? This will mark the event as completed and release participation certificates to all registered students.`)) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/events/${event.id}/end-event`, {
+        method: 'PATCH',
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        flashSuccess(data.message || 'Event ended & certificates activated!');
+        fetchMyEvents();
+        if (registrationsEvent && registrationsEvent.id === event.id) {
+          setRegistrationsEvent({
+            ...registrationsEvent,
+            isEnded: true,
+            certificatesIssued: 1
+          });
+        }
+      } else {
+        alert(data.error || 'Failed to end event');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Error ending event');
     }
   };
 
@@ -1442,11 +1474,24 @@ export default function OrganizerDashboard() {
                       <Receipt className="w-3.5 h-3.5" /> Registrations & Approvals
                     </button>
 
+                    {!ev.isEnded ? (
+                      <button
+                        onClick={() => handleEndEvent(ev)}
+                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+                      >
+                        <Flag className="w-3.5 h-3.5" /> End Event & Release Certs 🏁
+                      </button>
+                    ) : (
+                      <span className="w-full text-center px-3 py-1.5 bg-emerald-100 text-emerald-800 text-[11px] font-bold rounded-xl border border-emerald-200">
+                        🏁 Event Ended (Certs Active)
+                      </span>
+                    )}
+
                     <button
                       onClick={() => setActiveCertDesignerEvent(ev)}
                       className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded-xl text-xs font-bold transition-all border border-purple-200"
                     >
-                      <Award className="w-3.5 h-3.5" /> Issue Certificates 📜
+                      <Award className="w-3.5 h-3.5" /> Design Certificate 📜
                     </button>
 
                     <button
@@ -1566,6 +1611,20 @@ export default function OrganizerDashboard() {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    {!registrationsEvent.isEnded ? (
+                      <button
+                        type="button"
+                        onClick={() => handleEndEvent(registrationsEvent)}
+                        className="flex items-center justify-center gap-2 px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                      >
+                        <Flag className="w-4 h-4" />
+                        End Event & Release Certs 🏁
+                      </button>
+                    ) : (
+                      <span className="px-3 py-2 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-xl border border-emerald-200">
+                        🏁 Event Ended & Certs Active
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => setActiveScannerEvent(registrationsEvent)}
@@ -1580,7 +1639,7 @@ export default function OrganizerDashboard() {
                       className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
                     >
                       <Award className="w-4 h-4" />
-                      Design & Issue Certificates 📜
+                      Design Certificate 📜
                     </button>
                   </div>
                 </div>
