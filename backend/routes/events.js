@@ -977,16 +977,26 @@ router.get('/my-registrations', authenticate, (req, res) => {
     ORDER BY r.created_at DESC
   `).all(req.user.id);
 
-  res.json({
-    registrations: regs.map(r => ({
+  const formattedRegs = regs.map(r => {
+    let tokenToUse = r.ticket_token;
+    if (!tokenToUse && r.status === 'confirmed') {
+      tokenToUse = generateTicketToken(r.id, r.event_id, r.user_id);
+      db.prepare('UPDATE registrations SET ticket_token = ? WHERE id = ?').run(tokenToUse, r.id);
+    }
+
+    return {
       ...r,
       id: r.id.toString(),
       isPaid: Boolean(r.is_paid),
       answers: r.answers ? JSON.parse(r.answers) : {},
-      ticketToken: r.ticket_token,
+      ticketToken: tokenToUse,
       checkedIn: Boolean(r.checked_in),
       checkedInAt: r.checked_in_at
-    }))
+    };
+  });
+
+  res.json({
+    registrations: formattedRegs
   });
 });
 

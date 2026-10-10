@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import AdminPanel from './pages/AdminPanel';
 import OrganizerDashboard from './pages/OrganizerDashboard';
+import MyPasses from './pages/MyPasses';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './lib/AuthContext';
 
@@ -24,7 +25,7 @@ function App() {
               <Route path="/" element={<Home />} />
               <Route path="/clubs" element={<div className="p-8">Clubs Directory Placeholder</div>} />
               <Route path="/schedule" element={<div className="p-8">My Schedule Placeholder</div>} />
-              <Route path="/passes" element={<div className="p-8">My Passes Placeholder</div>} />
+              <Route path="/passes" element={<MyPasses />} />
             </Route>
 
             {/* Organizer Only Routes */}
