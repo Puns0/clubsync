@@ -16,22 +16,22 @@
 }
 
 html.dark {
-  --bg-offwhite: #0b0f19;
-  --text-ink: #f8fafc;
-  --bg-card: #151c2c;
+  --bg-offwhite: #121212;
+  --text-ink: #f3f4f6;
+  --bg-card: #1e1e1e;
   color-scheme: dark;
 }
 
 html.dark body {
-  background-color: #0b0f19 !important;
-  color: #f8fafc !important;
+  background-color: #121212 !important;
+  color: #f3f4f6 !important;
 }
 
 html.dark nav,
 html.dark .bg-white,
 html.dark .bg-brand-card {
-  background-color: #151c2c !important;
-  color: #f8fafc !important;
+  background-color: #1e1e1e !important;
+  color: #f3f4f6 !important;
 }
 
 html.dark .bg-brand-offwhite,
@@ -40,12 +40,12 @@ html.dark .bg-brand-offwhite\/60,
 html.dark .bg-brand-offwhite\/70,
 html.dark .bg-brand-offwhite\/80,
 html.dark .bg-brand-offwhite\/90 {
-  background-color: #0b0f19 !important;
-  color: #f8fafc !important;
+  background-color: #121212 !important;
+  color: #f3f4f6 !important;
 }
 
 html.dark .text-brand-ink {
-  color: #f8fafc !important;
+  color: #f3f4f6 !important;
 }
 
 html.dark .text-brand-ink\/80,
@@ -53,22 +53,22 @@ html.dark .text-brand-ink\/70,
 html.dark .text-brand-ink\/60,
 html.dark .text-brand-ink\/50,
 html.dark .text-brand-ink\/40 {
-  color: #cbd5e1 !important;
+  color: #d1d5db !important;
 }
 
 html.dark .border-brand-ink\/10,
 html.dark .border-brand-ink\/20,
 html.dark .border-brand-ink\/5,
 html.dark .border-brand-ink\/15 {
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 html.dark input,
 html.dark select,
 html.dark textarea {
-  background-color: #1e293b !important;
-  color: #f8fafc !important;
-  border-color: rgba(255, 255, 255, 0.15) !important;
+  background-color: #262626 !important;
+  color: #f3f4f6 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
 @layer base {
