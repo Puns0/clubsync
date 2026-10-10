@@ -2203,6 +2203,42 @@ function ViewStudentQrModal({
   );
 }
 
+function playScanSound(type: 'success' | 'already' | 'error') {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    if (type === 'success') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+    } else if (type === 'already') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523, ctx.currentTime);
+      osc.frequency.setValueAtTime(392, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } else {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(220, ctx.currentTime);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.25);
+    }
+  } catch (_) {
+    /* Ignore audio restrictions if blocked by browser */
+  }
+}
+
 function QrScannerModal({ 
   event, 
   onClose, 
@@ -2232,11 +2268,34 @@ function QrScannerModal({
 
   const [cameraError, setCameraError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const lastScannedRef = useRef<{ token: string; time: number } | null>(null);
+  const scanLockRef = useRef<boolean>(false);
 
   const verifyTicket = async (ticketCode: string) => {
     if (!ticketCode || verifying) return;
+
+    const cleanCode = ticketCode.trim().toUpperCase();
+    const now = Date.now();
+
+    if (scanLockRef.current) return;
+
+    if (lastScannedRef.current) {
+      const isSameToken = lastScannedRef.current.token === cleanCode;
+      const timeElapsed = now - lastScannedRef.current.time;
+
+      // Ignore duplicate scan of same QR code within 5 seconds
+      if (isSameToken && timeElapsed < 5000) {
+        return;
+      }
+      // Throttle scans to at most 1 per 1.2 seconds
+      if (timeElapsed < 1200) {
+        return;
+      }
+    }
+
+    lastScannedRef.current = { token: cleanCode, time: now };
+    scanLockRef.current = true;
     setVerifying(true);
-    setScanResult(null);
 
     try {
       const res = await fetch(`${API_BASE_URL}/events/${event.id}/verify-ticket`, {
@@ -2245,7 +2304,7 @@ function QrScannerModal({
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ ticketToken: ticketCode })
+        body: JSON.stringify({ ticketToken: cleanCode })
       });
 
       const data = await res.json();
@@ -2256,8 +2315,15 @@ function QrScannerModal({
           message: data.message,
           student: data.student
         });
+
+        if (data.alreadyCheckedIn) {
+          playScanSound('already');
+        } else {
+          playScanSound('success');
+        }
         onVerificationSuccess();
       } else {
+        playScanSound('error');
         setScanResult({
           success: false,
           message: data.error || data.message || 'Verification failed. Invalid QR code.'
@@ -2265,12 +2331,17 @@ function QrScannerModal({
       }
     } catch (err) {
       console.error(err);
+      playScanSound('error');
       setScanResult({
         success: false,
         message: 'Network error while verifying QR ticket.'
       });
     } finally {
       setVerifying(false);
+      // Re-enable scanning after 1.5 second pause for smooth UX
+      setTimeout(() => {
+        scanLockRef.current = false;
+      }, 1500);
     }
   };
 
@@ -2280,7 +2351,6 @@ function QrScannerModal({
     let timerId: any = null;
 
     const startScanner = async () => {
-      // Delay initialization to ensure modal element is mounted in DOM
       timerId = setTimeout(async () => {
         try {
           const targetEl = document.getElementById("qr-reader-target");
@@ -2310,7 +2380,7 @@ function QrScannerModal({
           await html5Qrcode.start(
             cameraConfig,
             { 
-              fps: 10, 
+              fps: 3, 
               qrbox: { width: 200, height: 200 },
               aspectRatio: 1.0
             },
@@ -2385,9 +2455,9 @@ function QrScannerModal({
             >
               <div className="flex items-center gap-2 font-bold text-base">
                 {scanResult.success ? (
-                  scanResult.alreadyCheckedIn ? <AlertTriangle className="w-5 h-5 text-amber-600" /> : <CheckCircle className="w-5 h-5 text-emerald-600" />
+                  scanResult.alreadyCheckedIn ? <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0" /> : <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
                 ) : (
-                  <AlertCircle className="w-5 h-5 text-red-600" />
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
                 )}
                 <span>{scanResult.message}</span>
               </div>
@@ -2407,7 +2477,12 @@ function QrScannerModal({
 
           {/* Camera Scanner Viewfinder */}
           <div className="space-y-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-brand-ink/50 block">Camera Viewfinder</span>
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-bold uppercase tracking-wider text-brand-ink/50">Camera Viewfinder</span>
+              <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                1 scan/sec auto-cooldown
+              </span>
+            </div>
             <div className="relative w-full aspect-square max-w-[260px] mx-auto bg-slate-900 rounded-2xl overflow-hidden border-2 border-brand-ink/10 shadow-inner flex items-center justify-center">
               <div id="qr-reader-target" className="w-full h-full"></div>
 

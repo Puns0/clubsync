@@ -250,8 +250,11 @@ export default function MyPasses() {
                         <QrCode className="w-4 h-4" /> Entry Pass Code
                       </span>
                       {pass.checkedIn ? (
-                        <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md text-[10px] font-extrabold flex items-center gap-1">
-                          <CheckCircle className="w-3 h-3 text-emerald-600" /> Verified Checked-In
+                        <span className="text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-lg text-[10px] font-extrabold flex items-center gap-1 border border-emerald-300 shadow-xs">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>
+                            Verified ✓ {pass.checkedInAt ? `(${new Date(pass.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ''}
+                          </span>
                         </span>
                       ) : (
                         <span className="text-amber-800 bg-amber-100/80 px-2 py-0.5 rounded-md text-[10px] font-bold">
@@ -368,9 +371,16 @@ export default function MyPasses() {
               {/* Gate Verification Status */}
               <div className="pt-2">
                 {selectedPassModal.checkedIn ? (
-                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-900 rounded-2xl text-xs font-bold border border-emerald-300">
-                    <CheckCircle className="w-4 h-4 text-emerald-600" />
-                    <span>Attendance Verified at Venue</span>
+                  <div className="flex flex-col items-center gap-1 p-3 bg-emerald-50 text-emerald-900 rounded-2xl border border-emerald-300 shadow-sm">
+                    <div className="flex items-center gap-2 text-xs font-black">
+                      <CheckCircle className="w-4 h-4 text-emerald-600" />
+                      <span>VENUE ENTRY VERIFIED ✓</span>
+                    </div>
+                    {selectedPassModal.checkedInAt && (
+                      <span className="text-[10px] text-emerald-700 font-medium">
+                        Checked-in at {new Date(selectedPassModal.checkedInAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} ({new Date(selectedPassModal.checkedInAt).toLocaleDateString()})
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-900 rounded-2xl text-xs font-bold border border-amber-300">
