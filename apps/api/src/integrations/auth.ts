@@ -3,13 +3,6 @@ import type { PrismaClient } from '@prisma/client';
 import { AppError } from '../core/errors.js';
 import type { Role } from '@clubsync/shared';
 
-/**
- * PART 2 REPLACES THIS STUB.
- * Signature to keep:
- * requireAuth(req, res, next)
- * requireRole(...roles)
- */
-
 export function requireAuth(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) {
     throw new AppError('UNAUTHENTICATED', 'You must be logged in');

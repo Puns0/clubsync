@@ -3,6 +3,15 @@ import { AppError } from '../../core/errors.js';
 import { OTP_RULES, LOGIN_LOCKOUT, type UserDTO } from '@clubsync/shared';
 import { createSession, destroySession } from '../../core/security.js';
 import { otpEmailHtml } from '../../core/mail.js';
+import { rateLimit } from 'express-rate-limit';
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: { code: 'RATE_LIMIT_EXCEEDED', message: 'Too many requests, please try again later.' } }
+});
 
 export default defineModule({
   id: 'auth',
@@ -27,7 +36,7 @@ export default defineModule({
     }
 
     // ── Register ──────────────────────────────────────────────
-    defineRoute('auth.register', async (req, res) => {
+    defineRoute('auth.register', authLimiter, async (req, res) => {
       const { name, email, password, usn, department, year, phone, role, organizerNote, requestedClubIds } = req.body;
 
       const existingUser = await prisma.user.findUnique({ where: { email } });
@@ -130,7 +139,7 @@ export default defineModule({
     }
 
     // ── Verify OTP ────────────────────────────────────────────
-    defineRoute('auth.verifyOtp', async (req, res) => {
+    defineRoute('auth.verifyOtp', authLimiter, async (req, res) => {
       const { email, code, purpose } = req.body;
 
       const user = await prisma.user.findUnique({ where: { email } });
@@ -178,7 +187,7 @@ export default defineModule({
     });
 
     // ── Login ─────────────────────────────────────────────────
-    defineRoute('auth.login', async (req, res) => {
+    defineRoute('auth.login', authLimiter, async (req, res) => {
       const { email, password } = req.body;
 
       const user = await prisma.user.findUnique({ where: { email }, include: { clubLinks: true } });
@@ -256,19 +265,19 @@ export default defineModule({
 
     // ── Resend OTP, Forgot, Reset, Update Profile etc... ──────
     // I'll implement stubs for now to get the tests passing, will fill in full logic shortly.
-    defineRoute('auth.resendOtp', async (req, res) => {
+    defineRoute('auth.resendOtp', authLimiter, async (req, res) => {
       const { email, purpose } = req.body;
       const user = await prisma.user.findUnique({ where: { email } });
       if (user) await sendOtp(user.id, email, purpose);
       res.json({ message: 'If an account exists, an OTP has been sent' });
     });
-    defineRoute('auth.forgotPassword', async (req, res) => {
+    defineRoute('auth.forgotPassword', authLimiter, async (req, res) => {
       const { email } = req.body;
       const user = await prisma.user.findUnique({ where: { email } });
       if (user) await sendOtp(user.id, email, 'PASSWORD_RESET');
       res.json({ message: 'If an account exists, a reset code has been sent' });
     });
-    defineRoute('auth.resetPassword', async (req, res) => {
+    defineRoute('auth.resetPassword', authLimiter, async (req, res) => {
        const { email, code, newPassword } = req.body;
        const user = await prisma.user.findUnique({ where: { email } });
        if (!user) throw new AppError('OTP_INVALID', 'Invalid code');
