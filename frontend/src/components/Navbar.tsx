@@ -1,9 +1,16 @@
-import { Link } from 'react-router-dom';
-import { Search, CalendarDays, User, Ticket } from 'lucide-react';
-import { cn } from '../lib/utils';
-import { motion } from 'framer-motion';
+import { Link, useNavigate } from 'react-router-dom';
+import { Search, CalendarDays, User, Ticket, LogOut, Shield, ClipboardList } from 'lucide-react';
+import { useAuth } from '../lib/AuthContext';
 
 export default function Navbar() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
   return (
     <nav className="sticky top-0 z-50 bg-brand-offwhite/90 backdrop-blur-md border-b border-brand-ink/10">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -34,9 +41,38 @@ export default function Navbar() {
               <span className="absolute -top-1 -right-1 w-3 h-3 bg-brand-vermilion rounded-full border-2 border-brand-offwhite"></span>
               <span className="text-[10px] font-medium hidden md:block">Passes</span>
             </Link>
-            <button className="w-8 h-8 rounded-full bg-brand-ink text-white flex items-center justify-center hover:scale-105 transition-transform">
-              <User className="w-4 h-4" />
-            </button>
+            
+            {user ? (
+              <div className="flex items-center gap-4">
+                {user.role === 'admin' && (
+                  <Link to="/admin" className="text-brand-ink/70 hover:text-brand-vermilion transition-colors flex flex-col items-center gap-1">
+                    <Shield className="w-5 h-5" />
+                    <span className="text-[10px] font-medium hidden md:block">Admin</span>
+                  </Link>
+                )}
+                {user.role === 'organizer' && (
+                  <Link to="/organizer" className="text-brand-ink/70 hover:text-brand-vermilion transition-colors flex flex-col items-center gap-1">
+                    <ClipboardList className="w-5 h-5" />
+                    <span className="text-[10px] font-medium hidden md:block">Manage</span>
+                  </Link>
+                )}
+                <div className="flex items-center gap-2 border-l border-brand-ink/20 pl-4">
+                  <span className="text-sm font-medium hidden md:block">{user.name}</span>
+                  <button 
+                    onClick={handleLogout}
+                    className="w-8 h-8 rounded-full bg-brand-ink/10 text-brand-ink flex items-center justify-center hover:bg-brand-vermilion hover:text-white transition-all"
+                    title="Logout"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <Link to="/login" className="flex items-center gap-2 px-4 py-2 bg-brand-ink text-white rounded-full font-medium text-sm hover:scale-105 transition-transform">
+                <User className="w-4 h-4" />
+                Sign In
+              </Link>
+            )}
           </div>
         </div>
       </div>
