@@ -200,57 +200,6 @@ function initDatabase() {
     }
   }
 
-  // ──────────────────────────────────────────────────────
-  // Seed Dummy Interactive Event & Registration for Certificate Testing
-  // ──────────────────────────────────────────────────────
-  const dummyEventExists = db.prepare('SELECT id FROM events WHERE title = ?').get('AI & Web3 Innovation Summit 2026 🚀');
-  let dummyEventId;
-  if (!dummyEventExists) {
-    const firstClub = db.prepare('SELECT * FROM clubs LIMIT 1').get();
-    const firstOrg = db.prepare('SELECT * FROM users WHERE role = ? OR role = ? LIMIT 1').get('organizer', 'admin');
-    
-    const defaultTemplate = JSON.stringify({
-      theme: 'gold_crest',
-      title: 'CERTIFICATE OF PARTICIPATION',
-      subtitle: 'This certificate is proudly awarded to',
-      message: 'for outstanding participation and successful completion of the AI & Web3 Innovation Summit 2026.',
-      issuerName: 'Coding Club Committee',
-      issuerTitle: 'Lead Organizer'
-    });
-
-    const res = db.prepare(`
-      INSERT INTO events (
-        title, club_id, club_name, organizer_id, organizer_name,
-        date, time_start, time_end, venue, description, total_seats, taken_seats,
-        is_paid, ticket_price, status, is_live, is_ended, certificates_issued, certificate_template
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      'AI & Web3 Innovation Summit 2026 🚀',
-      firstClub ? firstClub.id : 1,
-      firstClub ? firstClub.name : 'Coding Club',
-      firstOrg ? firstOrg.id : 1,
-      firstOrg ? firstOrg.name : 'Demo Organizer',
-      '2026-10-10', '10:00', '17:00', 'Main Auditorium',
-      'Special hackathon & workshop event for testing certificate generation and event ending functionality.',
-      100, 1, 0, 0, 'approved', 1, 0, 0, defaultTemplate
-    );
-    dummyEventId = res.lastInsertRowid;
-    console.log('✅ Seeded dummy test event: AI & Web3 Innovation Summit 2026 🚀');
-  } else {
-    dummyEventId = dummyEventExists.id;
-  }
-
-  // Register all existing users (including organizer & admin) into this dummy event as confirmed participants
-  const allUsers = db.prepare('SELECT id, name, email FROM users').all();
-  const insertRegStmt = db.prepare(`
-    INSERT OR IGNORE INTO registrations (
-      event_id, user_id, user_name, user_email, is_paid, ticket_price, status
-    ) VALUES (?, ?, ?, ?, 0, 0, 'confirmed')
-  `);
-  for (const u of allUsers) {
-    insertRegStmt.run(dummyEventId, u.id, u.name, u.email);
-  }
-
   return db;
 }
 
