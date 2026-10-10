@@ -141,6 +141,11 @@ function initDatabase() {
   safeAlter('ALTER TABLE events ADD COLUMN custom_questions TEXT');
   safeAlter('ALTER TABLE events ADD COLUMN demo_mode INTEGER DEFAULT 0');
 
+  // Registrations table additions
+  safeAlter('ALTER TABLE registrations ADD COLUMN ticket_token TEXT');
+  safeAlter('ALTER TABLE registrations ADD COLUMN checked_in INTEGER DEFAULT 0');
+  safeAlter('ALTER TABLE registrations ADD COLUMN checked_in_at DATETIME');
+
   // ──────────────────────────────────────────────────────
   //  Seed data
   // ──────────────────────────────────────────────────────

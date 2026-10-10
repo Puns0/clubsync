@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Html5Qrcode } from 'html5-qrcode';
 import { 
   CalendarPlus, 
   ClipboardList, 
@@ -13,6 +14,7 @@ import {
   Image as ImageIcon, 
   FileText, 
   QrCode, 
+  Scan,
   AlertCircle, 
   AlertTriangle,
   ArrowUp,
@@ -25,8 +27,7 @@ import {
   Eye,
   Info,
   ArrowLeft,
-  Trash2,
-  DoorOpen
+  Trash2
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 import API_BASE_URL from '../lib/api';
@@ -92,6 +93,9 @@ export interface RegistrationItem {
   answers?: Record<string, string>;
   year?: string;
   department?: string;
+  ticketToken?: string;
+  checkedIn?: boolean;
+  checkedInAt?: string;
   created_at: string;
 }
 
@@ -115,6 +119,10 @@ export default function OrganizerDashboard() {
   const [loadingRegistrations, setLoadingRegistrations] = useState(false);
   const [activeScreenshotModal, setActiveScreenshotModal] = useState<string | null>(null);
   const [processingRegId, setProcessingRegId] = useState<string | null>(null);
+
+  // QR Code viewing & Scanner modals
+  const [viewingQrReg, setViewingQrReg] = useState<RegistrationItem | null>(null);
+  const [activeScannerEvent, setActiveScannerEvent] = useState<EventItem | null>(null);
 
 
   // Form Fields
@@ -140,7 +148,7 @@ export default function OrganizerDashboard() {
   const [eligibleDepartments, setEligibleDepartments] = useState<string[]>([]);
   const [customQuestions, setCustomQuestions] = useState<string[]>([]);
   const [newQuestion, setNewQuestion] = useState('');
-  const [demoMode, setDemoMode] = useState(false);
+  const [demoMode] = useState(false);
 
   // Status feedback
   const [submitting, setSubmitting] = useState(false);
@@ -1535,12 +1543,25 @@ export default function OrganizerDashboard() {
                     {registrationsEvent.isPaid ? `Paid Entry (₹${registrationsEvent.ticketPrice})` : 'Free Entry'}
                   </span>
                 </div>
-                <h3 className="text-2xl font-extrabold text-brand-ink tracking-tight">
-                  Student Registrations & Payments
-                </h3>
-                <p className="text-xs text-brand-ink/60 mt-1">
-                  Event: <strong className="text-brand-ink">{registrationsEvent.title}</strong>
-                </p>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-2">
+                  <div>
+                    <h3 className="text-2xl font-extrabold text-brand-ink tracking-tight">
+                      Student Registrations & Attendance
+                    </h3>
+                    <p className="text-xs text-brand-ink/60 mt-0.5">
+                      Event: <strong className="text-brand-ink">{registrationsEvent.title}</strong>
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveScannerEvent(registrationsEvent)}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
+                  >
+                    <Scan className="w-4 h-4" />
+                    Scan & Validate QR Pass
+                  </button>
+                </div>
               </div>
 
               {/* Seats Stats Bar */}
@@ -1584,7 +1605,7 @@ export default function OrganizerDashboard() {
                         className="p-4 bg-white rounded-2xl border border-brand-ink/10 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4"
                       >
                         <div className="space-y-1.5 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-sm text-brand-ink">{reg.user_name}</span>
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                               reg.status === 'confirmed'
@@ -1615,6 +1636,20 @@ export default function OrganizerDashboard() {
                                 ? 'Promotion Expired'
                                 : 'Rejected'}
                             </span>
+
+                            {reg.status === 'confirmed' && (
+                              reg.checkedIn ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">
+                                  <CheckCircle className="w-3 h-3 text-emerald-600" />
+                                  Attendance Verified
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                  <Clock className="w-3 h-3 text-amber-600" />
+                                  Pending Venue Entry
+                                </span>
+                              )
+                            )}
                           </div>
                           <p className="text-xs text-brand-ink/60">{reg.user_email}</p>
 
@@ -1703,9 +1738,16 @@ export default function OrganizerDashboard() {
                               </button>
                             </>
                           ) : reg.status === 'confirmed' ? (
-                            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                              Seat Confirmed ✓
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setViewingQrReg(reg)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white rounded-xl text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                              >
+                                <QrCode className="w-3.5 h-3.5" />
+                                View QR Pass
+                              </button>
+                            </div>
                           ) : reg.status === 'cancelled' ? (
                             <span className="text-xs font-bold text-orange-700 bg-orange-50 px-2.5 py-1 rounded-lg border border-orange-200 flex flex-col items-center">
                               <span>Student Left</span>
@@ -1929,6 +1971,360 @@ export default function OrganizerDashboard() {
         )}
       </AnimatePresence>
 
+      {/* View Student QR Modal */}
+      {viewingQrReg && registrationsEvent && (
+        <ViewStudentQrModal
+          registration={viewingQrReg}
+          eventId={registrationsEvent.id}
+          token={token}
+          onClose={() => setViewingQrReg(null)}
+        />
+      )}
+
+      {/* QR Scanner & Attendance Verification Modal */}
+      {activeScannerEvent && (
+        <QrScannerModal
+          event={activeScannerEvent}
+          token={token}
+          onClose={() => setActiveScannerEvent(null)}
+          onVerificationSuccess={() => {
+            if (registrationsEvent && registrationsEvent.id === activeScannerEvent.id) {
+              fetchRegistrationsForEvent(registrationsEvent);
+            }
+          }}
+        />
+      )}
+
+    </div>
+  );
+}
+
+function ViewStudentQrModal({
+  registration,
+  eventId,
+  token,
+  onClose
+}: {
+  registration: RegistrationItem;
+  eventId: string | number;
+  token: string | null;
+  onClose: () => void;
+}) {
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [loadingQr, setLoadingQr] = useState(true);
+
+  useEffect(() => {
+    const fetchQr = async () => {
+      try {
+        setLoadingQr(true);
+        const res = await fetch(`${API_BASE_URL}/events/${eventId}/registrations/${registration.id}/qr`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setQrDataUrl(data.qrDataUrl);
+        }
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoadingQr(false);
+      }
+    };
+    fetchQr();
+  }, [registration.id, eventId, token]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-ink/70 backdrop-blur-md">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 text-center space-y-4 border border-brand-ink/10 relative overflow-hidden"
+      >
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-1.5 text-brand-ink/40 hover:text-brand-ink hover:bg-brand-ink/5 rounded-full transition-colors cursor-pointer"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div>
+          <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-2">
+            <QrCode className="w-6 h-6" />
+          </div>
+          <h3 className="font-bold text-base text-brand-ink">{registration.user_name}</h3>
+          <p className="text-xs text-brand-ink/60">{registration.user_email}</p>
+        </div>
+
+        <div className="p-4 bg-brand-offwhite rounded-2xl border border-brand-ink/10 inline-block mx-auto">
+          {loadingQr ? (
+            <div className="w-48 h-48 flex flex-col items-center justify-center text-xs text-brand-ink/40">
+              <div className="w-6 h-6 border-2 border-brand-ink/20 border-t-brand-vermilion rounded-full animate-spin mb-2" />
+              Generating QR Pass...
+            </div>
+          ) : qrDataUrl ? (
+            <img src={qrDataUrl} alt="Student Entry QR" className="w-48 h-48 rounded-xl shadow-sm border border-white" />
+          ) : (
+            <div className="w-48 h-48 flex items-center justify-center text-xs text-red-500 font-medium">
+              Failed to load QR code.
+            </div>
+          )}
+        </div>
+
+        {registration.ticketToken && (
+          <div className="space-y-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-ink/40 block">Ticket Token</span>
+            <code className="text-xs font-mono font-bold text-brand-ink bg-brand-offwhite px-3 py-1 rounded-lg border border-brand-ink/10 inline-block">
+              {registration.ticketToken}
+            </code>
+          </div>
+        )}
+
+        <div className="pt-2">
+          {registration.checkedIn ? (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold">
+              <CheckCircle className="w-4 h-4 text-emerald-600" />
+              Checked In at {new Date(registration.checkedInAt!).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-800 rounded-full text-xs font-bold">
+              <Clock className="w-4 h-4 text-amber-600" />
+              Pending Gate Entry Verification
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function QrScannerModal({ 
+  event, 
+  onClose, 
+  token,
+  onVerificationSuccess 
+}: { 
+  event: EventItem; 
+  onClose: () => void; 
+  token: string | null;
+  onVerificationSuccess: () => void;
+}) {
+  const [manualToken, setManualToken] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [scanResult, setScanResult] = useState<{
+    success: boolean;
+    alreadyCheckedIn?: boolean;
+    message: string;
+    student?: {
+      name: string;
+      email: string;
+      year: string;
+      department: string;
+      ticketToken: string;
+      checkedInAt?: string;
+    };
+  } | null>(null);
+
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+
+  const verifyTicket = async (ticketCode: string) => {
+    if (!ticketCode || verifying) return;
+    setVerifying(true);
+    setScanResult(null);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/events/${event.id}/verify-ticket`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ ticketToken: ticketCode })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setScanResult({
+          success: true,
+          alreadyCheckedIn: data.alreadyCheckedIn,
+          message: data.message,
+          student: data.student
+        });
+        onVerificationSuccess();
+      } else {
+        setScanResult({
+          success: false,
+          message: data.error || data.message || 'Verification failed. Invalid QR code.'
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setScanResult({
+        success: false,
+        message: 'Network error while verifying QR ticket.'
+      });
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  useEffect(() => {
+    let html5Qrcode: Html5Qrcode | null = null;
+    let isStopped = false;
+
+    const startScanner = async () => {
+      try {
+        html5Qrcode = new Html5Qrcode("qr-reader-target");
+        scannerRef.current = html5Qrcode;
+
+        await html5Qrcode.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 220, height: 220 } },
+          (decodedText) => {
+            if (!isStopped) {
+              verifyTicket(decodedText);
+            }
+          },
+          () => {} // Ignore scan frame errors
+        );
+      } catch (err: any) {
+        console.warn("Camera scanner notice:", err);
+        setCameraError("Camera permission or video input unavailable. Use manual token entry below.");
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      isStopped = true;
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {}).finally(() => {
+          scannerRef.current = null;
+        });
+      }
+    };
+  }, [event.id]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-brand-ink/70 backdrop-blur-md">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden border border-brand-ink/10 flex flex-col max-h-[90vh]"
+      >
+        {/* Header */}
+        <div className="p-5 bg-gradient-to-r from-brand-ink to-slate-800 text-white flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-orange-500/20 text-orange-400 rounded-xl border border-orange-400/30">
+              <QrCode className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base leading-tight">Validate Venue Entry</h3>
+              <p className="text-xs text-slate-300 font-medium truncate max-w-[240px]">{event.title}</p>
+            </div>
+          </div>
+          <button 
+            onClick={onClose}
+            className="p-2 hover:bg-white/10 rounded-full transition-colors cursor-pointer text-slate-300 hover:text-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 overflow-y-auto space-y-5">
+          {/* Verification Result Banner */}
+          {scanResult && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`p-4 rounded-2xl border text-sm space-y-2 ${
+                scanResult.success
+                  ? scanResult.alreadyCheckedIn
+                    ? 'bg-amber-50 border-amber-300 text-amber-900'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                  : 'bg-red-50 border-red-300 text-red-900'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-bold text-base">
+                {scanResult.success ? (
+                  scanResult.alreadyCheckedIn ? <AlertTriangle className="w-5 h-5 text-amber-600" /> : <CheckCircle className="w-5 h-5 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-red-600" />
+                )}
+                <span>{scanResult.message}</span>
+              </div>
+
+              {scanResult.student && (
+                <div className="pt-2 border-t border-brand-ink/10 space-y-1 text-xs">
+                  <p><strong className="font-semibold">Student:</strong> {scanResult.student.name} ({scanResult.student.email})</p>
+                  <p><strong className="font-semibold">Department & Year:</strong> {scanResult.student.department} • {scanResult.student.year}</p>
+                  <p><strong className="font-semibold">Token ID:</strong> <code className="bg-white/60 px-1.5 py-0.5 rounded font-mono">{scanResult.student.ticketToken}</code></p>
+                  {scanResult.student.checkedInAt && (
+                    <p><strong className="font-semibold">Check-In Time:</strong> {new Date(scanResult.student.checkedInAt).toLocaleString()}</p>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {/* Camera Scanner Viewfinder */}
+          <div className="space-y-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-brand-ink/50 block">Camera Viewfinder</span>
+            <div className="relative w-full aspect-square max-w-[260px] mx-auto bg-slate-900 rounded-2xl overflow-hidden border-2 border-brand-ink/10 shadow-inner flex items-center justify-center">
+              <div id="qr-reader-target" className="w-full h-full"></div>
+
+              {verifying && (
+                <div className="absolute inset-0 bg-brand-ink/60 backdrop-blur-xs flex flex-col items-center justify-center text-white p-4">
+                  <div className="w-8 h-8 border-3 border-white/20 border-t-orange-500 rounded-full animate-spin mb-2" />
+                  <span className="text-xs font-bold">Verifying Token...</span>
+                </div>
+              )}
+            </div>
+            {cameraError && (
+              <p className="text-xs text-amber-700 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-center font-medium">
+                {cameraError}
+              </p>
+            )}
+          </div>
+
+          {/* Manual Input Fallback */}
+          <div className="pt-3 border-t border-brand-ink/10 space-y-2">
+            <label className="text-xs font-bold uppercase tracking-wider text-brand-ink/60 block">
+              Or Enter Ticket Token Manually
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. CS-TKT-12-34567890ABCD"
+                value={manualToken}
+                onChange={(e) => setManualToken(e.target.value)}
+                className="flex-1 px-3.5 py-2.5 bg-brand-offwhite/50 border border-brand-ink/15 rounded-xl text-xs font-mono font-medium text-brand-ink focus:outline-none focus:ring-2 focus:ring-brand-vermilion"
+              />
+              <button
+                type="button"
+                disabled={!manualToken.trim() || verifying}
+                onClick={() => verifyTicket(manualToken)}
+                className="px-4 py-2.5 bg-brand-vermilion hover:bg-brand-vermilion/90 text-white text-xs font-bold rounded-xl transition-all shadow-sm disabled:opacity-50 cursor-pointer"
+              >
+                {verifying ? 'Verifying...' : 'Verify'}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="p-4 bg-brand-offwhite/50 border-t border-brand-ink/10 text-right">
+          <button
+            onClick={onClose}
+            className="px-5 py-2 bg-white hover:bg-brand-offwhite text-brand-ink text-xs font-bold rounded-xl border border-brand-ink/10 transition-all cursor-pointer"
+          >
+            Close
+          </button>
+        </div>
+      </motion.div>
     </div>
   );
 }

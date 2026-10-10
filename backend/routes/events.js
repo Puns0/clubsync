@@ -1,9 +1,19 @@
 const express = require('express');
 const { authenticate, authorize } = require('../middleware/auth');
 const { advanceWaitlist, studentHasClash, timesOverlap } = require('../workers/promotionWorker');
+const crypto = require('crypto');
+const QRCode = require('qrcode');
 const { Resend } = require('resend');
 
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+function generateTicketToken(regId, eventId, userId) {
+  const secret = process.env.JWT_SECRET || 'clubsync_secret_key';
+  const hmac = crypto.createHmac('sha256', secret)
+    .update(`${regId}:${eventId}:${userId}`)
+    .digest('hex').substring(0, 12).toUpperCase();
+  return `CS-TKT-${regId}-${hmac}`;
+}
 
 const router = express.Router();
 
@@ -771,7 +781,7 @@ router.get('/:id/registrations', authenticate, (req, res) => {
   }
 
   const registrations = db.prepare(`
-    SELECT r.id, r.event_id, r.user_id, r.user_name, r.user_email, r.is_paid, r.ticket_price, r.payment_screenshot, r.status, r.rejection_reason, r.waitlist_position, r.promoted_at, r.promotion_expires_at, r.answers, r.created_at, r.updated_at, u.year, u.department
+    SELECT r.id, r.event_id, r.user_id, r.user_name, r.user_email, r.is_paid, r.ticket_price, r.payment_screenshot, r.status, r.rejection_reason, r.waitlist_position, r.promoted_at, r.promotion_expires_at, r.answers, r.ticket_token, r.checked_in, r.checked_in_at, r.created_at, r.updated_at, u.year, u.department
     FROM registrations r
     JOIN users u ON r.user_id = u.id
     WHERE r.event_id = ?
@@ -792,7 +802,10 @@ router.get('/:id/registrations', authenticate, (req, res) => {
       ...r,
       id: r.id.toString(),
       isPaid: Boolean(r.is_paid),
-      answers: r.answers ? JSON.parse(r.answers) : {}
+      answers: r.answers ? JSON.parse(r.answers) : {},
+      ticketToken: r.ticket_token,
+      checkedIn: Boolean(r.checked_in),
+      checkedInAt: r.checked_in_at
     }))
   });
 });
@@ -801,7 +814,7 @@ router.get('/:id/registrations', authenticate, (req, res) => {
  * PATCH /api/events/:id/registrations/:regId/status
  * Organizer approves or rejects a registration (especially for paid events)
  */
-router.patch('/:id/registrations/:regId/status', authenticate, (req, res) => {
+router.patch('/:id/registrations/:regId/status', authenticate, async (req, res) => {
   const db = req.app.get('db');
   const eventId = parseInt(req.params.id, 10);
   const regId = parseInt(req.params.regId, 10);
@@ -830,52 +843,72 @@ router.patch('/:id/registrations/:regId/status', authenticate, (req, res) => {
           return res.status(404).json({ error: 'Registration not found' });
       }
 
+      let ticketToken = reg.ticket_token;
+
       // If approving (changing to confirmed):
       if (status === 'confirmed' && reg.status !== 'confirmed') {
-        if (event.taken_seats >= event.total_seats && reg.status !== 'pending_approval') { // pending payment already holds a seat conceptually if we do it that way, but actually we increased taken_seats on pending!
+        if (event.taken_seats >= event.total_seats && reg.status !== 'pending_approval') {
           if (reg.status !== 'pending_approval') {
              db.exec('ROLLBACK');
              return res.status(400).json({ error: 'Cannot approve: Event is already at maximum capacity!' });
           }
         }
 
+        if (!ticketToken) {
+          ticketToken = generateTicketToken(regId, eventId, reg.user_id);
+        }
+
         db.prepare(`
           UPDATE registrations SET
             status = 'confirmed',
+            ticket_token = ?,
             rejection_reason = NULL,
             updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `).run(regId);
+        `).run(ticketToken, regId);
 
-        // If it was waitlisted/promoted, increment taken_seats and decrement waitlist_count (shouldn't happen directly in normal flow, but just in case)
+        // If it was waitlisted/promoted, increment taken_seats and decrement waitlist_count
         if (['waitlisted', 'promoted'].includes(reg.status)) {
             db.prepare('UPDATE events SET taken_seats = taken_seats + 1, waitlist_count = MAX(0, waitlist_count - 1) WHERE id = ?').run(eventId);
         }
 
-        // Send confirmation email
+        // Generate QR Code data URL for email
+        let qrDataUrl = '';
+        try {
+          qrDataUrl = await QRCode.toDataURL(ticketToken, { margin: 2, width: 300 });
+        } catch (qrErr) {
+          console.error('Failed to generate QR Data URL:', qrErr);
+        }
+
+        // Send confirmation email with QR pass
         if (process.env.RESEND_API_KEY) {
           resend.emails.send({
             from: 'ClubSync <hello@pabit.in>',
             to: reg.user_email,
             subject: `✅ Registration Confirmed: ${event.title}`,
             html: `
-              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-                <h2 style="color: #2b3a42;">You're in, ${reg.user_name}!</h2>
-                <p style="font-size: 16px; color: #555;">
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 1px solid #e2e8f0; border-radius: 12px; background-color: #ffffff;">
+                <h2 style="color: #1e293b; text-align: center; margin-top: 0;">You're in, ${reg.user_name}! 🎉</h2>
+                <p style="font-size: 16px; color: #475569; text-align: center; line-height: 1.5;">
                   Your registration for <strong>${event.title}</strong> has been confirmed by the organizer.
                 </p>
-                <p style="font-size: 16px; color: #555;">
-                  You are now officially joined into the event. Check your dashboard for the QR pass and event details.
-                </p>
-                <div style="text-align: center; margin: 30px 0;">
-                  <a href="https://club.pabit.in" style="background-color: #ff5722; color: #fff; text-decoration: none; padding: 14px 24px; border-radius: 8px; font-weight: bold; font-size: 16px; display: inline-block;">
+                ${qrDataUrl ? `
+                <div style="text-align: center; margin: 25px 0; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                  <p style="font-size: 13px; font-weight: bold; color: #64748b; margin: 0 0 12px 0; text-transform: uppercase; letter-spacing: 1px;">Official Entry QR Pass</p>
+                  <img src="${qrDataUrl}" alt="Event Entry QR Pass" style="width: 200px; height: 200px; display: block; margin: 0 auto; border: 4px solid #ffffff; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08);" />
+                  <p style="font-family: monospace; font-size: 14px; color: #0f172a; margin: 12px 0 0 0; font-weight: bold; letter-spacing: 0.5px;">${ticketToken}</p>
+                  <p style="font-size: 12px; color: #64748b; margin: 4px 0 0 0;">Show this QR code at the venue entrance for attendance verification.</p>
+                </div>
+                ` : ''}
+                <div style="text-align: center; margin: 30px 0 10px 0;">
+                  <a href="https://club.pabit.in" style="background-color: #ff5722; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 8px; font-weight: bold; font-size: 15px; display: inline-block;">
                     View Event Details
                   </a>
                 </div>
               </div>
             `
           }).then((response) => {
-            console.log(`📧 Confirmation email sent to ${reg.user_email}:`, response.data?.id);
+            console.log(`📧 Confirmation email with QR sent to ${reg.user_email}:`, response.data?.id);
           }).catch((error) => {
             console.error('Failed to send confirmation email:', error);
           });
@@ -914,7 +947,10 @@ router.patch('/:id/registrations/:regId/status', authenticate, (req, res) => {
           ...updatedReg,
           id: updatedReg.id.toString(),
           isPaid: Boolean(updatedReg.is_paid),
-          answers: updatedReg.answers ? JSON.parse(updatedReg.answers) : {}
+          answers: updatedReg.answers ? JSON.parse(updatedReg.answers) : {},
+          ticketToken: updatedReg.ticket_token,
+          checkedIn: Boolean(updatedReg.checked_in),
+          checkedInAt: updatedReg.checked_in_at
         },
         eventSeats: {
           takenSeats: updatedEvent.taken_seats,
@@ -946,8 +982,144 @@ router.get('/my-registrations', authenticate, (req, res) => {
       ...r,
       id: r.id.toString(),
       isPaid: Boolean(r.is_paid),
-      answers: r.answers ? JSON.parse(r.answers) : {}
+      answers: r.answers ? JSON.parse(r.answers) : {},
+      ticketToken: r.ticket_token,
+      checkedIn: Boolean(r.checked_in),
+      checkedInAt: r.checked_in_at
     }))
+  });
+});
+
+/**
+ * POST /api/events/:id/verify-ticket
+ * Organizer scans or inputs a student's QR ticket_token to verify venue attendance
+ */
+router.post('/:id/verify-ticket', authenticate, (req, res) => {
+  const db = req.app.get('db');
+  const eventId = parseInt(req.params.id, 10);
+  const { ticketToken } = req.body;
+
+  if (!ticketToken || typeof ticketToken !== 'string') {
+    return res.status(400).json({ error: 'Ticket token is required' });
+  }
+
+  const cleanToken = ticketToken.trim().toUpperCase();
+
+  const event = db.prepare('SELECT * FROM events WHERE id = ?').get(eventId);
+  if (!event) {
+    return res.status(404).json({ error: 'Event not found' });
+  }
+
+  if (req.user.role !== 'admin' && event.organizer_id !== req.user.id) {
+    return res.status(403).json({ error: 'Permission denied: Only the assigned organizer or admin can scan tickets for this event.' });
+  }
+
+  const reg = db.prepare(`
+    SELECT r.*, u.year, u.department
+    FROM registrations r
+    LEFT JOIN users u ON r.user_id = u.id
+    WHERE r.event_id = ? AND UPPER(r.ticket_token) = ?
+  `).get(eventId, cleanToken);
+
+  if (!reg) {
+    return res.status(404).json({ 
+      success: false, 
+      error: 'Invalid QR Ticket Code. No matching registration found for this event.' 
+    });
+  }
+
+  if (reg.status !== 'confirmed') {
+    return res.status(400).json({ 
+      success: false, 
+      error: `Registration is not confirmed (Current Status: ${reg.status.toUpperCase()}).` 
+    });
+  }
+
+  if (reg.checked_in) {
+    return res.json({
+      success: true,
+      alreadyCheckedIn: true,
+      message: '⚠️ Student was ALREADY checked in previously!',
+      student: {
+        id: reg.id.toString(),
+        userId: reg.user_id,
+        name: reg.user_name,
+        email: reg.user_email,
+        year: reg.year || 'N/A',
+        department: reg.department || 'N/A',
+        status: reg.status,
+        ticketToken: reg.ticket_token,
+        checkedInAt: reg.checked_in_at
+      }
+    });
+  }
+
+  // Mark student as checked in
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE registrations SET
+      checked_in = 1,
+      checked_in_at = ?
+    WHERE id = ?
+  `).run(now, reg.id);
+
+  return res.json({
+    success: true,
+    alreadyCheckedIn: false,
+    message: '✅ Attendance Verified! Student successfully checked into venue.',
+    student: {
+      id: reg.id.toString(),
+      userId: reg.user_id,
+      name: reg.user_name,
+      email: reg.user_email,
+      year: reg.year || 'N/A',
+      department: reg.department || 'N/A',
+      status: 'confirmed',
+      ticketToken: reg.ticket_token,
+      checkedInAt: now
+    }
+  });
+});
+
+/**
+ * GET /api/events/:id/registrations/:regId/qr
+ * Returns registration ticket details and QR code data URL
+ */
+router.get('/:id/registrations/:regId/qr', authenticate, async (req, res) => {
+  const db = req.app.get('db');
+  const eventId = parseInt(req.params.id, 10);
+  const regId = parseInt(req.params.regId, 10);
+
+  const reg = db.prepare('SELECT * FROM registrations WHERE id = ? AND event_id = ?').get(regId, eventId);
+  if (!reg) {
+    return res.status(404).json({ error: 'Registration not found' });
+  }
+
+  const event = db.prepare('SELECT organizer_id FROM events WHERE id = ?').get(eventId);
+  if (req.user.role !== 'admin' && req.user.id !== reg.user_id && event?.organizer_id !== req.user.id) {
+    return res.status(403).json({ error: 'Permission denied' });
+  }
+
+  let tokenToUse = reg.ticket_token;
+  if (!tokenToUse && reg.status === 'confirmed') {
+    tokenToUse = generateTicketToken(reg.id, eventId, reg.user_id);
+    db.prepare('UPDATE registrations SET ticket_token = ? WHERE id = ?').run(tokenToUse, reg.id);
+  }
+
+  let qrDataUrl = null;
+  if (tokenToUse) {
+    try {
+      qrDataUrl = await QRCode.toDataURL(tokenToUse, { margin: 2, width: 300 });
+    } catch (err) {
+      console.error('QR generation error:', err);
+    }
+  }
+
+  res.json({
+    ticketToken: tokenToUse,
+    qrDataUrl,
+    checkedIn: Boolean(reg.checked_in),
+    checkedInAt: reg.checked_in_at
   });
 });
 

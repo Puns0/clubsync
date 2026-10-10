@@ -299,11 +299,13 @@ export default function Home() {
   const oneWeekFromNow = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
 
   const liveEvents = filteredEvents.filter((e) => {
-    const eventDate = new Date(`${e.date}T${e.timeStart || e.time.split(' ')[0]}`); // Fallback if timeStart missing
+    const timeVal = (e as any).timeStart || (e.time ? e.time.split(' ')[0] : '00:00');
+    const eventDate = new Date(`${e.date}T${timeVal}`);
     return eventDate <= oneWeekFromNow;
   });
   const upcomingEvents = filteredEvents.filter((e) => {
-    const eventDate = new Date(`${e.date}T${e.timeStart || e.time.split(' ')[0]}`);
+    const timeVal = (e as any).timeStart || (e.time ? e.time.split(' ')[0] : '00:00');
+    const eventDate = new Date(`${e.date}T${timeVal}`);
     return eventDate > oneWeekFromNow;
   });
 
