@@ -2172,32 +2172,62 @@ function QrScannerModal({
   useEffect(() => {
     let html5Qrcode: Html5Qrcode | null = null;
     let isStopped = false;
+    let timerId: any = null;
 
     const startScanner = async () => {
-      try {
-        html5Qrcode = new Html5Qrcode("qr-reader-target");
-        scannerRef.current = html5Qrcode;
+      // Delay initialization to ensure modal element is mounted in DOM
+      timerId = setTimeout(async () => {
+        try {
+          const targetEl = document.getElementById("qr-reader-target");
+          if (!targetEl || isStopped) return;
 
-        await html5Qrcode.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 220, height: 220 } },
-          (decodedText) => {
-            if (!isStopped) {
-              verifyTicket(decodedText);
+          html5Qrcode = new Html5Qrcode("qr-reader-target");
+          scannerRef.current = html5Qrcode;
+
+          let cameraConfig: string | { facingMode: string } = { facingMode: "environment" };
+
+          try {
+            const cameras = await Html5Qrcode.getCameras();
+            if (cameras && cameras.length > 0) {
+              const backCamera = cameras.find(c => 
+                c.label.toLowerCase().includes('back') || 
+                c.label.toLowerCase().includes('rear') ||
+                c.label.toLowerCase().includes('environment')
+              );
+              cameraConfig = backCamera ? backCamera.id : cameras[0].id;
             }
-          },
-          () => {} // Ignore scan frame errors
-        );
-      } catch (err: any) {
-        console.warn("Camera scanner notice:", err);
-        setCameraError("Camera permission or video input unavailable. Use manual token entry below.");
-      }
+          } catch (camErr) {
+            console.warn("Could not list cameras, falling back to facingMode", camErr);
+          }
+
+          if (isStopped) return;
+
+          await html5Qrcode.start(
+            cameraConfig,
+            { 
+              fps: 10, 
+              qrbox: { width: 200, height: 200 },
+              aspectRatio: 1.0
+            },
+            (decodedText) => {
+              if (!isStopped) {
+                verifyTicket(decodedText);
+              }
+            },
+            () => {} // Ignore scan frame errors
+          );
+        } catch (err: any) {
+          console.warn("Camera scanner notice:", err);
+          setCameraError("Camera permission or video input unavailable. You can manually enter or paste the student's Ticket Token below.");
+        }
+      }, 250);
     };
 
     startScanner();
 
     return () => {
       isStopped = true;
+      if (timerId) clearTimeout(timerId);
       if (scannerRef.current) {
         scannerRef.current.stop().catch(() => {}).finally(() => {
           scannerRef.current = null;
