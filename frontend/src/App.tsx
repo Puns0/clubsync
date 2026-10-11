@@ -6,6 +6,7 @@ import Register from './pages/Register';
 import AdminPanel from './pages/AdminPanel';
 import OrganizerDashboard from './pages/OrganizerDashboard';
 import MyPasses from './pages/MyPasses';
+import MySchedule from './pages/MySchedule';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './lib/AuthContext';
 
@@ -23,8 +24,8 @@ function App() {
             {/* Protected Routes (Any logged in user) */}
             <Route element={<ProtectedRoute />}>
               <Route path="/" element={<Home />} />
-              <Route path="/clubs" element={<div className="p-8">Clubs Directory Placeholder</div>} />
-              <Route path="/schedule" element={<div className="p-8">My Schedule Placeholder</div>} />
+              <Route path="/clubs" element={<div className="p-8 text-center font-medium">Clubs Directory Placeholder</div>} />
+              <Route path="/schedule" element={<MySchedule />} />
               <Route path="/passes" element={<MyPasses />} />
             </Route>
 
