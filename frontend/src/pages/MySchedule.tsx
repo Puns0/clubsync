@@ -88,7 +88,7 @@ export default function MySchedule() {
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#1e1e1e] p-6 sm:p-8 rounded-3xl border border-brand-ink/10 shadow-xs">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 sm:p-8 rounded-3xl border border-brand-ink/10 shadow-xs">
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-vermilion/10 text-brand-vermilion text-xs font-extrabold uppercase tracking-wider mb-2">
             <Calendar className="w-3.5 h-3.5" /> My Personal Timeline
@@ -115,7 +115,7 @@ export default function MySchedule() {
 
       {/* Quick Summary Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="p-5 bg-white dark:bg-[#1e1e1e] rounded-2xl border border-brand-ink/10 shadow-xs flex items-center justify-between">
+        <div className="p-5 bg-white rounded-2xl border border-brand-ink/10 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-brand-ink/50 uppercase tracking-wider block">Joined Events</span>
             <strong className="text-2xl font-black text-brand-ink">{registrations.length}</strong>
@@ -125,7 +125,7 @@ export default function MySchedule() {
           </div>
         </div>
 
-        <div className="p-5 bg-white dark:bg-[#1e1e1e] rounded-2xl border border-brand-ink/10 shadow-xs flex items-center justify-between">
+        <div className="p-5 bg-white rounded-2xl border border-brand-ink/10 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-brand-ink/50 uppercase tracking-wider block">Confirmed Passes</span>
             <strong className="text-2xl font-black text-emerald-700">{confirmedCount}</strong>
@@ -135,7 +135,7 @@ export default function MySchedule() {
           </div>
         </div>
 
-        <div className="p-5 bg-white dark:bg-[#1e1e1e] rounded-2xl border border-brand-ink/10 shadow-xs flex items-center justify-between">
+        <div className="p-5 bg-white rounded-2xl border border-brand-ink/10 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-xs font-semibold text-brand-ink/50 uppercase tracking-wider block">Gate Verified</span>
             <strong className="text-2xl font-black text-purple-700">{checkedInCount}</strong>
@@ -153,7 +153,7 @@ export default function MySchedule() {
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
             activeFilter === 'all'
               ? 'bg-brand-ink text-white shadow-sm'
-              : 'bg-white dark:bg-[#1e1e1e] text-brand-ink/70 hover:bg-brand-ink/5 border border-brand-ink/10'
+              : 'bg-white text-brand-ink/70 hover:bg-brand-ink/5 border border-brand-ink/10'
           }`}
         >
           All Events ({registrations.length})
@@ -163,7 +163,7 @@ export default function MySchedule() {
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
             activeFilter === 'confirmed'
               ? 'bg-emerald-600 text-white shadow-sm'
-              : 'bg-white dark:bg-[#1e1e1e] text-brand-ink/70 hover:bg-brand-ink/5 border border-brand-ink/10'
+              : 'bg-white text-brand-ink/70 hover:bg-brand-ink/5 border border-brand-ink/10'
           }`}
         >
           Confirmed ({confirmedCount})
@@ -173,7 +173,7 @@ export default function MySchedule() {
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
             activeFilter === 'pending'
               ? 'bg-amber-600 text-white shadow-sm'
-              : 'bg-white dark:bg-[#1e1e1e] text-brand-ink/70 hover:bg-brand-ink/5 border border-brand-ink/10'
+              : 'bg-white text-brand-ink/70 hover:bg-brand-ink/5 border border-brand-ink/10'
           }`}
         >
           Pending / Waitlist ({pendingCount})
@@ -182,7 +182,7 @@ export default function MySchedule() {
 
       {/* Schedule List */}
       {loading ? (
-        <div className="py-16 text-center space-y-3 bg-white dark:bg-[#1e1e1e] rounded-3xl border border-brand-ink/10">
+        <div className="py-16 text-center space-y-3 bg-white rounded-3xl border border-brand-ink/10">
           <div className="w-8 h-8 border-3 border-brand-ink/20 border-t-brand-vermilion rounded-full animate-spin mx-auto" />
           <p className="text-xs text-brand-ink/60 font-medium">Loading your schedule timeline...</p>
         </div>
@@ -191,7 +191,7 @@ export default function MySchedule() {
           {errorMsg}
         </div>
       ) : filteredRegistrations.length === 0 ? (
-        <div className="py-16 px-6 bg-white dark:bg-[#1e1e1e] rounded-3xl border border-brand-ink/10 text-center space-y-4">
+        <div className="py-16 px-6 bg-white rounded-3xl border border-brand-ink/10 text-center space-y-4">
           <div className="w-16 h-16 bg-brand-vermilion/10 text-brand-vermilion rounded-2xl flex items-center justify-center mx-auto">
             <Compass className="w-8 h-8" />
           </div>
@@ -213,7 +213,7 @@ export default function MySchedule() {
           {filteredRegistrations.map((reg) => (
             <div
               key={reg.id}
-              className="p-5 sm:p-6 bg-white dark:bg-[#1e1e1e] rounded-3xl border border-brand-ink/10 shadow-xs hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-5 relative overflow-hidden"
+              className="p-5 sm:p-6 bg-white rounded-3xl border border-brand-ink/10 shadow-xs hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-5 relative overflow-hidden"
             >
               {/* Left Details Section */}
               <div className="space-y-3 flex-1">
